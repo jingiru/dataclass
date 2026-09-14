@@ -32,3 +32,9 @@ npm run dev
 현재 구현은 로컬 포트폴리오 방식입니다. 학급별 온라인 수집, 사용자 로그인, 교사 인증, 서버 저장, Google Sheets API 연동은 포함하지 않습니다. 교사 화면 전환은 인증 기능이 아니므로 실제 성적 관리는 교사가 보관한 평가 결과 파일을 기준으로 해야 합니다.
 
 기존 버전 3의 브라우저 저장과 JSON 답안은 새 수행 순서로 이동합니다. 신설된 결측 데이터 수행을 작성하고 다시 제출해야 하므로 기존 제출 상태·점수·피드백은 초기화됩니다. 기존 버전 3 브라우저 저장은 별도 키에 유지됩니다.
+
+## Supabase 온라인 제출
+
+Vercel Production 환경변수에 `SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 등록합니다. Secret key는 서버에서만 사용하며 GitHub에 저장하지 않습니다. `public.submissions`의 열은 `id uuid`, `student_name text`, `classroom text`, `answers jsonb`, `submitted_at timestamptz`입니다. `classroom`에는 4자리 학번을 저장합니다. RLS를 활성화하고 anon/authenticated 권한은 부여하지 않습니다. Data API 자동 권한 부여를 끈 프로젝트에서는 서버 역할의 INSERT 권한이 필요합니다: `grant insert on table public.submissions to service_role;`.
+
+제출하기는 `/api/submissions`를 통해 답안 전체를 저장합니다. 이미지 원본 data URL과 이미지 이름, 설명, 표 원문 및 이상 데이터 행을 answers에 보관합니다. 전체 JSON 요청은 4MiB 이하, 이미지 한 장은 2MiB 이하입니다. 용량 초과와 저장 실패 시 작성 내용을 유지합니다. 파일 내보내기는 백업용으로 계속 사용할 수 있습니다. 다시 제출하면 새 행이 생성됩니다. 서버 제출 목록 조회와 교사 인증은 별도 구현이 필요합니다. 학생 로그인 없이 제출하므로 학번의 실제 소유자는 인증하지 않습니다.
