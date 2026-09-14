@@ -17,3 +17,9 @@
 .teacher-login-card h2 { margin-bottom:20px; }
 .teacher-login-card input { display:block; width:100%; padding:12px; border:1px solid #ccd4ca; border-radius:8px; margin:10px 0 20px; }
 .teacher-login-card p { color:#a32c2c; margin-bottom:16px; }
+
+.teacher-workspace { max-width:1200px; margin:24px auto; padding:0 24px; }
+.teacher-workspace .guide-card { margin:24px 0; }
+.teacher-workspace .portfolio-card { margin-top:20px; }
+.teacher-workspace .answer-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.teacher-workspace .table-wrap { max-height:520px; overflow:auto; margin:16px 0; }

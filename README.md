@@ -48,3 +48,7 @@ Vercel Production 환경변수에 `SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 등
 ### 교사 비밀번호 로그인
 
 Production에 `TEACHER_PASSWORD`, `TEACHER_SESSION_SECRET`(32자 이상)을 서버 전용 환경변수로 등록합니다. 교사 평가실은 `/api/teacher/session`에서 비밀번호를 확인하고 HttpOnly/SameSite=Strict 쿠키로 8시간 로그인합니다. HTTPS에서는 Secure를 설정합니다. 로그아웃으로 쿠키를 삭제합니다. 비밀번호 또는 세션 키 변경 시 기존 쿠키도 무효화됩니다. 서버에서 `hasTeacherSession(request)`로 검사하는 공통 함수를 제공합니다. 학생 제출 조회·이미지 조회·AI 평가·평가 저장 API를 추가할 때 이 검사를 반드시 적용해야 합니다. 현재 단계는 로그인만 구현하며 서버 학생 목록은 아직 연결하지 않습니다. 공용 비밀번호는 교사별 계정 구분을 제공하지 않습니다. 로그인 시도 제한은 Vercel Firewall 등 별도 설정이 필요합니다.
+
+### 교사 제출 목록 조회
+
+교사 평가실은 서버 제출 목록을 50건씩 최신순으로 표시하며 제출별 답안을 확인합니다. 학생의 로컬 답안과 교사 조회 데이터를 분리합니다. `grant select on table public.submissions to service_role;`를 SQL Editor에서 실행해야 합니다. 학생 anon/authenticated에는 SELECT를 부여하지 않습니다. 목록과 상세 답안 및 Storage 이미지 요청은 모두 교사 쿠키를 서버에서 확인합니다. Storage 이미지는 인증된 서버 프록시로 표시하며 버킷은 비공개로 유지합니다. 모든 조회 응답은 no-store입니다. 기존 Base64 제출도 표시합니다. 재제출은 별도 제출 기록으로 나열합니다. 현재 이 화면은 열람 기능이며 점수 저장·AI 평가는 다음 단계입니다.
