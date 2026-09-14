@@ -44,3 +44,7 @@ Vercel Production 환경변수에 `SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 등
 `submission-images` 버킷을 Private으로 생성합니다. 새 제출은 `/api/submission-images`에서 이미지 원본(2MiB 이하)을 한 장씩 업로드하고, `/api/submissions`에서 답변과 표 및 `imageBucket`/`imagePath`를 저장합니다. 버킷 공개나 학생용 Storage 정책은 필요하지 않습니다. 업로드 경로에는 학번/이름을 넣지 않습니다. 서버 서명으로 해당 학번의 업로드 경로를 검증하며 서명은 DB에 저장하지 않습니다. 로컬 답안과 JSON 백업에는 이미지 원본을 유지합니다. 기존 DB의 Base64 이미지는 변경하지 않습니다.
 
 이미지와 DB 저장은 별도 요청이므로 DB 저장 실패나 브라우저 종료 시 연결되지 않은 업로드가 남을 수 있습니다. 같은 페이지에서 재시도할 때는 완료된 업로드를 재사용합니다. 미연결 파일 정리 작업은 추후 필요합니다. 교사 열람은 인증 구현 이후 서버에서 Private 이미지의 단기 signed URL을 발급하도록 구현해야 합니다. 현재 공개 이미지 조회 API는 제공하지 않습니다.
+
+### 교사 비밀번호 로그인
+
+Production에 `TEACHER_PASSWORD`, `TEACHER_SESSION_SECRET`(32자 이상)을 서버 전용 환경변수로 등록합니다. 교사 평가실은 `/api/teacher/session`에서 비밀번호를 확인하고 HttpOnly/SameSite=Strict 쿠키로 8시간 로그인합니다. HTTPS에서는 Secure를 설정합니다. 로그아웃으로 쿠키를 삭제합니다. 비밀번호 또는 세션 키 변경 시 기존 쿠키도 무효화됩니다. 서버에서 `hasTeacherSession(request)`로 검사하는 공통 함수를 제공합니다. 학생 제출 조회·이미지 조회·AI 평가·평가 저장 API를 추가할 때 이 검사를 반드시 적용해야 합니다. 현재 단계는 로그인만 구현하며 서버 학생 목록은 아직 연결하지 않습니다. 공용 비밀번호는 교사별 계정 구분을 제공하지 않습니다. 로그인 시도 제한은 Vercel Firewall 등 별도 설정이 필요합니다.

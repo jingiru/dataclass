@@ -73,9 +73,56 @@ export default function Home() {
  const uploadedImages = useRef(new Map<string, { imagePath: string; imageReceipt: string }>());
  const [active, setActive] = useState(-1);
  const [teacher, setTeacher] = useState(false);
+ const [teacherLogin, setTeacherLogin] = useState(false);
+ const [teacherPassword, setTeacherPassword] = useState('');
+ const [teacherError, setTeacherError] = useState('');
+ const [teacherBusy, setTeacherBusy] = useState(false);
  const [notice, setNotice] = useState('');
  const [saved, setSaved] = useState('불러오는 중');
  const importInput = useRef<HTMLInputElement>(null);
+ async function enterTeacher() {
+  setTeacherBusy(true); setTeacherError('');
+  try {
+   const response = await fetch('/api/teacher/session', { cache: 'no-store' });
+   const session = await response.json() as { authenticated?: boolean };
+   if (response.ok && session.authenticated) { setTeacher(true); navigate(5); }
+   else { setTeacherLogin(true); setTeacherPassword(''); }
+  } catch { setNotice('교사 로그인 서버에 연결하지 못했습니다.'); }
+  finally { setTeacherBusy(false); }
+ }
+ async function loginTeacher(e: React.FormEvent) {
+  e.preventDefault(); if (teacherBusy) return;
+  setTeacherBusy(true); setTeacherError('');
+  try {
+   const response = await fetch('/api/teacher/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: teacherPassword }) });
+   const session = await response.json() as { authenticated?: boolean; error?: string };
+   if (!response.ok || !session.authenticated) throw new Error(session.error || '로그인하지 못했습니다.');
+   setTeacher(true); setTeacherLogin(false); navigate(5);
+  } catch (error) { setTeacherError(error instanceof Error ? error.message : '다시 시도해 주세요.'); }
+  finally { setTeacherPassword(''); setTeacherBusy(false); }
+ }
+ async function logoutTeacher() {
+  setTeacherBusy(true);
+  try {
+   const response = await fetch('/api/teacher/session', { method: 'DELETE' });
+   if (!response.ok) throw new Error();
+   setTeacher(false); setTeacherLogin(false); navigate(-1);
+  } catch { setNotice('로그아웃하지 못했습니다. 다시 시도해 주세요.'); }
+  finally { setTeacherBusy(false); }
+ }
+ useEffect(() => {
+  if (!teacher) return;
+  let cancelled = false;
+  async function check() {
+   try {
+    const response = await fetch('/api/teacher/session', { cache: 'no-store' });
+    const session = await response.json() as { authenticated?: boolean };
+    if (!cancelled && (!response.ok || !session.authenticated)) { setTeacher(false); setNotice('교사 로그인이 만료되었습니다. 다시 로그인해 주세요.'); }
+   } catch { if (!cancelled) setTeacher(false); }
+  }
+  const timer = setInterval(() => void check(), 60000);
+  return () => { cancelled = true; clearInterval(timer); };
+ }, [teacher]);
  useEffect(() => { let cancelled = false; loadWork().then(data => { if (!cancelled) { if (isWork(data)) { setWork(migrateWork(data)); if (data.version === 3) setNotice('기존 답안을 새 수행 순서로 불러왔습니다. 02 결측 데이터를 작성한 뒤 다시 제출해 주세요. 기존 제출 상태와 평가는 초기화되었습니다.'); } setReady(true); } }).catch(() => { if (!cancelled) { setNotice('저장된 답안을 불러오지 못했습니다. 답안 파일을 불러와 작업할 수 있어요.'); setReady(true); } }); return () => { cancelled = true; }; }, []);
  useEffect(() => { if (!ready) return; let cancelled = false; saveWork(work).then(() => { if (!cancelled) setSaved('이 브라우저에 저장됨'); }).catch(() => { if (!cancelled) { setSaved('브라우저 저장 실패'); setNotice('답안을 브라우저에 저장하지 못했습니다. 파일을 내보내 현재 작업을 보관하세요.'); } }); return () => { cancelled = true; }; }, [work, ready]);
  useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 6000); return () => clearTimeout(timer); }, [notice]);
@@ -134,11 +181,12 @@ export default function Home() {
  }
 
  return <div className="app">
-  <header className="topbar"><Link className="brand" href="/"> <span className="brand-mark">d<span>·</span></span> 데이터픽 <small>CLASSROOM</small></Link><div className="mode-switch"><button className={!teacher ? 'selected' : ''} onClick={() => setTeacher(false)}>학생 작업실</button><button className={teacher ? 'selected' : ''} onClick={() => setTeacher(true)}>교사 평가실</button></div><span className="local-label"><i /> 데이터 분석 작업실</span></header>
+  {teacherLogin && <div className="teacher-login-backdrop"><section className="teacher-login-card" role="dialog" aria-modal="true" aria-labelledby="teacher-login-title"><h2 id="teacher-login-title">교사 평가실 로그인</h2><form onSubmit={loginTeacher}><label htmlFor="teacher-password">교사용 비밀번호</label><input id="teacher-password" type="password" autoComplete="current-password" autoFocus required disabled={teacherBusy} value={teacherPassword} onChange={e => setTeacherPassword(e.target.value)}/>{teacherError && <p role="alert">{teacherError}</p>}<div className="submit-buttons"><button type="button" className="button secondary" disabled={teacherBusy} onClick={() => { setTeacherLogin(false); setTeacherPassword(''); }}>취소</button><button className="button primary" disabled={teacherBusy}>{teacherBusy ? '확인 중…' : '로그인'}</button></div></form></section></div>}
+  <header className="topbar"><Link className="brand" href="/"> <span className="brand-mark">d<span>·</span></span> 데이터픽 <small>CLASSROOM</small></Link><div className="mode-switch"><button className={!teacher ? 'selected' : ''} onClick={() => setTeacher(false)}>학생 작업실</button><button className={teacher ? 'selected' : ''} disabled={teacherBusy} onClick={enterTeacher}>교사 평가실</button>{teacher && <button disabled={teacherBusy} onClick={logoutTeacher}>로그아웃</button>}</div><span className="local-label"><i /> 데이터 분석 작업실</span></header>
   <div className="shell"><aside className="sidebar"><h2>데이터 분석 미션</h2><div className="side-divider"/><div className="nav-label"><span>30점</span></div><nav aria-label="수행 단계"><button className={`nav-item identity-nav ${active === -1 ? 'active' : ''}`} onClick={() => navigate(-1)}><span className="nav-num">00</span><span>기본 정보 입력</span><span className="nav-arrow">›</span></button>{tasks.map((t, i) => <button key={t.short} className={`nav-item ${active === i ? 'active' : ''}`} onClick={() => navigate(i)}><span className="nav-num">{complete[i] ? '✓' : `0${i + 1}`}</span><span>{t.short}</span><span className="nav-arrow">›</span></button>)}<button className={`nav-item review-nav ${active === 5 ? 'active' : ''}`} onClick={() => navigate(5)}><span className="nav-num">▤</span><span>{teacher ? '전체 답안 평가' : '검토 및 제출'}</span><span className="nav-arrow">›</span></button></nav></aside>
   <main>
    <input ref={importInput} type="file" accept=".json,application/json" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void importWork(f); e.target.value = ''; }}/>
-   {teacher && <div className="info-banner"><span>교사 평가</span><p>학생의 제출 파일을 불러와 평가하세요. 이 화면은 같은 브라우저의 답안을 보여주며, 서버 제출 목록 조회·교사 인증은 아직 연결되어 있지 않습니다.</p></div>}
+   {teacher && <div className="info-banner"><span>교사 평가</span><p>학생의 제출 파일을 불러와 평가하세요. 이 화면은 같은 브라우저의 답안을 보여주며, 교사 로그인은 연결되었으며, 서버 제출 목록 조회는 다음 단계에서 연결합니다.</p></div>}
    {active === -1 ? <section className="basic-info"><div className="section-heading"><span className="section-icon mint">00</span><div><h2>기본 정보 입력</h2><p>학번과 이름을 입력해 주세요.</p></div></div><div className="identity-card"><label htmlFor="student-number">학번 (4자리 / 예: 3101)<input id="student-number" inputMode="numeric" maxLength={4} pattern="[0-9]{4}" required value={work.classroom} disabled={locked || teacher || !ready} onChange={e => setWork(w => ({ ...w, classroom: e.target.value.replace(/\D/g, '').slice(0, 4) }))} placeholder="예: 3101"/></label><label htmlFor="student-name">이름<input id="student-name" required value={work.name} disabled={locked || teacher || !ready} onChange={e => setWork(w => ({ ...w, name: e.target.value }))} placeholder="이름 입력"/></label></div><p className="field-help identity-help">입력한 정보는 검토 및 제출과 제출 파일에 반영됩니다. · {saved}</p><div className="bottom-actions"><button className="button primary" onClick={() => navigate(0)}>이상 데이터 →</button></div></section> : active < 5 ? <><div className="task-layout"><div className="task-main"><section className="guide-card"><div className="section-heading"><span className="section-icon">↗</span><div><h2>{task.short}</h2><p>{task.tag}</p></div><span className="badge">작업 안내</span></div><p className="instruction-summary">{task.steps.join(" ▶ ")}</p></section>
    <section className="response-card"><div className="section-heading"><span className="section-icon mint">01</span><div><h2>{task.resultLabel}</h2><p>스프레드시트에서 얻은 결과를 남겨요</p></div><span className="required">필수</span></div><div className="response-body"><p className="field-help">{task.resultHint}</p>{active === 0 && <><div className="table-wrap anomaly-table"><table><thead><tr><th>열 이름</th><th>값</th><th>이상데이터라고 판단한 이유</th><th>행 삭제</th></tr></thead><tbody>{anomalyRows.map((row,i) => <tr key={i}>{(['column','value','reason'] as const).map((field,j) => <td key={field}><textarea aria-label={`${i+1}행 ${['열 이름','값','이상데이터라고 판단한 이유'][j]}`} disabled={locked || teacher} value={row[field]} onChange={e => updateRows(anomalyRows.map((r,index) => index === i ? { ...r, [field]: e.target.value } : r))}/></td>)}<td><button className="button secondary" disabled={locked || teacher} onClick={() => updateRows(anomalyRows.filter((_,index) => index !== i))}>행 삭제</button></td></tr>)}</tbody></table></div><button className="button secondary add-row" disabled={locked || teacher} onClick={() => updateRows([...anomalyRows,{ column: '', value: '', reason: '' }])}>+ 행 추가</button></>}{(active === 1 || active === 3) && <TablePaste value={answer.result} label={task.resultLabel} placeholder={task.placeholder} disabled={locked || teacher} onChange={value => update('result', value)}/>} {(active === 2 || active === 4) && <div className={`image-area ${answer.image ? 'has-image' : ''}`} tabIndex={0} onPaste={pasteImage} onDragOver={e => e.preventDefault()} onDrop={e => e.preventDefault()} aria-label="차트 캡처 이미지 붙여넣기">{answer.image ? <><a href={answer.image} target="_blank" rel="noreferrer"><img src={answer.image} alt="학생이 제출한 차트 캡처"/></a><div className="image-caption"><span>{answer.imageName}</span>{!locked && !teacher && <button onClick={() => { update('image', ''); update('imageName', ''); }}>이미지 삭제 ×</button>}</div></> : <><span className="upload-icon">▧</span><b>차트 캡처를 여기에 붙여넣으세요</b><p>영역을 클릭하고 <kbd>Ctrl</kbd> + <kbd>V</kbd></p></>}</div>}</div></section>
    {active > 1 && <section className="response-card"><div className="section-heading"><span className="section-icon lavender">02</span><div><h2>{task.explainLabel}</h2><p>결과를 넘어, 나의 생각과 근거를 써요</p></div><span className="required">필수</span></div><div className="response-body"><p className="field-help">{task.explainHint}</p><textarea className="explanation-input" aria-label={task.explainLabel} value={answer.explanation} disabled={locked || teacher} onChange={e => update('explanation', e.target.value)} placeholder={task.explainPlaceholder}/><div className="writing-footer"><span>정해진 문장보다 나만의 설명이 중요해요.</span><span>{answer.explanation.length}자</span></div></div></section>}
