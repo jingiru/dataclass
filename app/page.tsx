@@ -70,6 +70,7 @@ export default function Home() {
  const [ready, setReady] = useState(false);
  const [submitting, setSubmitting] = useState(false);
  const submissionBusy = useRef(false);
+ const uploadedImages = useRef(new Map<string, { imagePath: string; imageReceipt: string }>());
  const [active, setActive] = useState(-1);
  const [teacher, setTeacher] = useState(false);
  const [notice, setNotice] = useState('');
@@ -100,16 +101,33 @@ export default function Home() {
  async function submit() {
   if (submissionBusy.current || !ready || work.submittedAt) return;
   if (!work.name.trim() || !/^\d{4}$/.test(work.classroom) || count < 5) { setNotice('4자리 학번과 이름, 다섯 수행의 필수 항목을 모두 작성해 주세요.'); return; }
-  const body = JSON.stringify({ name: work.name, classroom: work.classroom, answers: work.answers });
-  if (new Blob([body]).size > 4 * 1024 * 1024) { setNotice('답안 전체 용량이 큽니다. 캡처 이미지 크기를 줄여 주세요. 작성한 답안은 유지됩니다.'); return; }
+  const metadata = work.answers.map(a => ({ ...a, image: '' }));
+  if (new Blob([JSON.stringify({ name: work.name, classroom: work.classroom, answers: metadata })]).size > 4 * 1024 * 1024 - 4096) { setNotice('표 데이터와 답변 전체 용량이 큽니다. 선생님께 알려 주세요. 작성한 답안은 유지됩니다.'); return; }
   submissionBusy.current = true; setSubmitting(true);
   try {
+   const answers = [];
+   for (const answer of work.answers) {
+    if (!answer.image) { answers.push(answer); continue; }
+    const cacheKey = `${work.classroom}:${answer.image}`;
+    let uploaded = uploadedImages.current.get(cacheKey);
+    if (!uploaded) {
+     const image = await fetch(answer.image).then(r => r.blob());
+     const upload = await fetch('/api/submission-images', { method: 'POST', headers: { 'Content-Type': image.type, 'x-student-number': work.classroom }, body: image });
+     const receipt = await upload.json().catch(() => null) as { error?: string; imagePath?: string; imageReceipt?: string } | null;
+     if (!upload.ok || !receipt?.imagePath || !receipt.imageReceipt) throw new Error(receipt?.error || '이미지를 업로드하지 못했습니다. 다시 제출해 주세요.');
+     uploaded = { imagePath: receipt.imagePath, imageReceipt: receipt.imageReceipt };
+     uploadedImages.current.set(cacheKey, uploaded);
+    }
+    answers.push({ ...answer, image: '', ...uploaded });
+   }
+   const body = JSON.stringify({ name: work.name, classroom: work.classroom, answers });
    const response = await fetch('/api/submissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
    const result = await response.json().catch(() => null) as { error?: string; submittedAt?: string } | null;
    if (!response.ok) throw new Error(result?.error || '제출하지 못했습니다. 잠시 후 다시 시도해 주세요.');
    if (typeof result?.submittedAt !== 'string') throw new Error('제출 결과를 확인하지 못했습니다. 선생님께 알려 주세요.');
    const submittedAt = result.submittedAt;
    setWork(w => ({ ...w, submittedAt, submittedToDb: true, reviewed: false }));
+   uploadedImages.current.clear();
    setNotice('제출 완료! 학생 정보와 답안이 서버에 저장되었습니다.');
   } catch (error) { setNotice(error instanceof Error ? error.message : '연결을 확인한 뒤 다시 제출해 주세요.'); }
   finally { submissionBusy.current = false; setSubmitting(false); }
@@ -136,4 +154,3 @@ export default function Home() {
 function Evaluation({ index, work, setWork }: { index: number; work: Work; setWork: React.Dispatch<React.SetStateAction<Work>> }) {
  return <div className="evaluation"><div className="evaluation-heading"><h3>교사 평가 · 수행 0{index + 1}</h3><label>점수 <input type="number" min="0" max="6" step="0.24" disabled={!work.submittedAt} value={work.scores[index] === null ? '' : Number(((work.scores[index] ?? 0) * 0.24).toFixed(2))} onChange={e => { const n = e.target.value === '' ? null : Math.round(Number(e.target.value) / 0.24); if (n !== null && (!Number.isInteger(n) || n < 0 || n > 25)) return; setWork(w => ({ ...w, reviewed: false, scores: w.scores.map((s, i) => i === index ? n : s) })); }}/><span>/ 6점</span></label></div><p className="field-help">{index === 1 ? '결측 행 제거 여부, 전체 데이터 제출 여부, 열 순서와 값의 정확성을 평가하세요. ' : ''}5.04~6: 정확한 결과와 구체적 근거 · 3.84~4.8: 대체로 정확하나 설명 일부 부족 · 0.24~3.6: 오류 또는 근거 부족 · 0: 수행 증거 없음</p><textarea aria-label={`수행 ${index + 1} 교사 피드백`} disabled={!work.submittedAt} value={work.feedback[index]} onChange={e => setWork(w => ({ ...w, reviewed: false, feedback: w.feedback.map((f, i) => i === index ? e.target.value : f) }))} placeholder={work.submittedAt ? '잘한 점과 보완할 점을 구체적으로 남겨 주세요.' : '학생이 제출 파일을 생성한 후 평가할 수 있습니다.'}/></div>;
 }
-
