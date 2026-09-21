@@ -26,6 +26,7 @@ type Work = {
   feedback: string[];
   reviewed: boolean;
   submittedToDb?: boolean;
+  submissionId?: string;
 };
 const blank = (): Work => ({
   version: 4,
@@ -445,8 +446,17 @@ export default function Home() {
   const [teacherError, setTeacherError] = useState('');
   const [teacherBusy, setTeacherBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [publishedResult, setPublishedResult] = useState<{items:{title:string;score:number;comment:string}[];total:number}|null>(null);
   const [saved, setSaved] = useState('불러오는 중');
   const importInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!work.submissionId || !/^\d{4}$/.test(work.classroom)) return;
+    const controller = new AbortController();
+    fetch(`/api/results?submissionId=${encodeURIComponent(work.submissionId)}&classroom=${work.classroom}`, { cache: 'no-store', signal: controller.signal })
+      .then(async response => { const data = await response.json() as {published?:boolean;result?:{items:{title:string;score:number;comment:string}[];total:number}}; setPublishedResult(response.ok && data.published && data.result ? data.result : null); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [work.submissionId, work.classroom]);
   async function enterTeacher() {
     setTeacherBusy(true);
     setTeacherError('');
@@ -773,12 +783,13 @@ export default function Home() {
       const result = (await response.json().catch(() => null)) as {
         error?: string;
         submittedAt?: string;
+        submissionId?: string;
       } | null;
       if (!response.ok)
         throw new Error(
           result?.error || '제출하지 못했습니다. 잠시 후 다시 시도해 주세요.',
         );
-      if (typeof result?.submittedAt !== 'string')
+      if (typeof result?.submittedAt !== 'string' || typeof result?.submissionId !== 'string')
         throw new Error(
           '제출 결과를 확인하지 못했습니다. 선생님께 알려 주세요.',
         );
@@ -786,6 +797,7 @@ export default function Home() {
       setWork((w) => ({
         ...w,
         submittedAt,
+        submissionId: result.submissionId,
         submittedToDb: true,
         reviewed: false,
       }));
@@ -1376,6 +1388,7 @@ export default function Home() {
                       <button
                         className="button secondary"
                         onClick={() => {
+                          setPublishedResult(null);
                           setWork((w) => ({
                             ...w,
                             submittedAt: '',
@@ -1402,6 +1415,12 @@ export default function Home() {
                     )}
                   </div>
                 </section>
+                {!teacher && work.submittedAt && (
+                  <section className="student-score-result">
+                    <h2>{publishedResult ? `공개된 평가 결과 · ${publishedResult.total}/30점` : '평가 결과 공개 전'}</h2>
+                    {publishedResult ? publishedResult.items.map(item => <div key={item.title}><b>{item.title} · {item.score}/10점</b><p>{item.comment || '등록된 코멘트가 없습니다.'}</p></div>) : <p>선생님이 학급 점수를 공개하면 이곳에서 점수와 코멘트를 확인할 수 있습니다.</p>}
+                  </section>
+                )}
                 <p className="storage-note">
                   작성 중 답안은 현재 브라우저에 저장되고, 제출하기를 누르면
                   서버에도 저장됩니다. 다른 기기에서는 내보낸 답안 파일을 불러와

@@ -36,11 +36,13 @@ export async function POST(request: Request) {
     if (!url || !key) return error('제출 서버 연결 설정이 필요합니다. 선생님께 알려 주세요.', 503);
     const submittedAt = new Date().toISOString();
     const response = await fetch(`${url.replace(/\/$/, '')}/rest/v1/submissions`, {
-      method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      method: 'POST', headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
       body: JSON.stringify({ student_name: data.name.trim(), classroom: data.classroom, answers: answers.map(a => ({ result: a.result, explanation: a.explanation, image: a.image, imageName: a.imageName, ...(a.imagePath ? { imagePath: a.imagePath, imageBucket: IMAGE_BUCKET } : {}), ...(a.rows ? { rows: a.rows } : {}) })), submitted_at: submittedAt }),
       signal: AbortSignal.timeout(25000),
     });
     if (!response.ok) return error('DB에 저장하지 못했습니다. 잠시 후 다시 제출해 주세요.', 502);
-    return Response.json({ submittedAt }, { status: 201 });
+    const saved = await response.json() as { id?: string }[];
+    if (!saved[0]?.id) return error('제출 ID를 확인하지 못했습니다.', 502);
+    return Response.json({ submittedAt, submissionId: saved[0].id }, { status: 201 });
   } catch { return error('제출 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.', 502); }
 }

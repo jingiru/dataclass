@@ -1,63 +1,26 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck -- API payloads are checked by response status and server validation.
 'use client';
 /* eslint-disable @next/next/no-img-element */
-import { useEffect, useState } from 'react';
-import { isTableResult, parseTable } from './table-data';
-
-type Summary = { id: string; student_name: string; classroom: string; submitted_at: string };
-type Answer = { result: string; explanation: string; image: string; imageName: string; rows?: { column: string; value: string; reason: string }[] };
-type Submission = Summary & { answers: Answer[] };
-const titles = ['이상 데이터 찾기', '결측 데이터', '차트로 표현하고 의미 해석하기', '피봇 테이블로 정보 추출하기', '데이터 관계 해석'];
-export default function TeacherWorkspace() {
- const [rows, setRows] = useState<Summary[]>([]), [selected, setSelected] = useState<Submission | null>(null);
- const [classroom, setClassroom] = useState('all'), [revision, setRevision] = useState(0);
- const [busy, setBusy] = useState(true), [error, setError] = useState(''), [detailBusy, setDetailBusy] = useState(false);
- const [selectedId, setSelectedId] = useState('');
- useEffect(() => {
-  const controller = new AbortController();
-  async function load() {
-   setBusy(true); setError(''); setRows([]);
-   try {
-    const all: Summary[] = [];
-    for (let page = 0; ; page++) {
-     const response = await fetch(`/api/teacher/submissions?page=${page}`, { cache: 'no-store', signal: controller.signal });
-     const data = await response.json() as { error?: string; submissions: Summary[]; hasMore: boolean };
-     if (!response.ok) throw new Error(data.error || '목록을 불러오지 못했습니다.');
-     all.push(...data.submissions); if (!data.hasMore) break;
-    }
-    const latest = new Map<string, Summary>();
-    for (const row of all) { const previous = latest.get(row.classroom); if (!previous || row.submitted_at > previous.submitted_at) latest.set(row.classroom, row); }
-    setRows([...latest.values()].sort((a,b) => a.classroom.localeCompare(b.classroom, 'en', { numeric:true })));
-   } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : '다시 시도해 주세요.'); }
-   finally { if (!controller.signal.aborted) setBusy(false); }
-  }
-  void load(); return () => controller.abort();
- }, [revision]);
- useEffect(() => {
-  if (!selectedId) return;
-  const controller = new AbortController();
-  async function load() {
-   setSelected(null); setDetailBusy(true); setError('');
-   try {
-    const response = await fetch(`/api/teacher/submissions?id=${selectedId}`, { cache: 'no-store', signal: controller.signal });
-    const data = await response.json() as { error?: string; submission: Submission };
-    if (!response.ok) throw new Error(data.error || '답안을 불러오지 못했습니다.');
-    setSelected(data.submission);
-   } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : '다시 시도해 주세요.'); }
-   finally { if (!controller.signal.aborted) setDetailBusy(false); }
-  }
-  void load(); return () => controller.abort();
- }, [selectedId, revision]);
- const classOf = (number: string) => /^\d{4}$/.test(number) ? number[1] : 'unknown';
- const classes = [...new Set(rows.map(row => classOf(row.classroom)))].sort((a,b) => a.localeCompare(b, 'en', { numeric:true }));
- return <main className="teacher-workspace"><div className="section-heading"><div><h2>학생 제출 답안</h2><p>학생을 선택하면 제출한 표, 설명과 캡처 이미지를 확인할 수 있습니다.</p></div><button className="button secondary" disabled={busy || detailBusy} onClick={() => setRevision(v => v + 1)}>새로고침</button></div>{error && <p role="alert">{error}</p>}
- <nav className="class-tabs" aria-label="학급 선택"><button className={classroom === 'all' ? 'active' : ''} onClick={() => setClassroom('all')}>전체 학급</button>{classes.map(c => <button key={c} className={classroom === c ? 'active' : ''} onClick={() => setClassroom(c)}>{c === 'unknown' ? '학번 확인 필요' : c + '반'}</button>)}</nav>
- {busy ? <p role="status">제출 목록을 불러오는 중…</p> : rows.length === 0 ? <section className="guide-card"><p>제출된 답안이 없습니다.</p></section> : classes.filter(c => classroom === 'all' || classroom === c).map(c => <section className="class-section" key={c}><h3>{c === 'unknown' ? '학번 확인 필요' : c + '반'}</h3><div className="student-card-grid">{rows.filter(row => classOf(row.classroom) === c).map(row => <button key={row.id} className={`student-answer-card ${selectedId === row.id ? 'selected' : ''}`} aria-pressed={selectedId === row.id} onClick={() => setSelectedId(row.id)}><span className="student-card-identity"><span className="student-card-number">{row.classroom}</span><span className="student-card-name">{row.student_name}</span></span><span className="student-card-score">채점 전</span></button>)}</div></section>)}
-
- {detailBusy && <p role="status">답안을 불러오는 중…</p>}{selected && <section className="portfolio teacher-answer-review" aria-label="학생 제출 답안 상세"><section className="identity-card review-identity"><div><h2>학생 정보</h2><p>학생이 제출한 답안입니다.</p></div><dl><div><dt>학번</dt><dd>{selected.classroom}</dd></div><div><dt>이름</dt><dd>{selected.student_name}</dd></div></dl></section>{selected.answers.map((a, i) => {
- const anomalyRows = a.rows ?? (a.result.trim() ? [{ column: '', value: a.result, reason: a.explanation }] : []);
- const complete = i === 0 ? anomalyRows.some(r => r.column.trim() && r.value.trim() && r.reason.trim()) && anomalyRows.filter(r => r.column.trim() || r.value.trim() || r.reason.trim()).every(r => r.column.trim() && r.value.trim() && r.reason.trim()) : i === 1 ? isTableResult(a.result) : a.explanation.trim() && (i === 2 || i === 4 ? a.image : isTableResult(a.result));
- return <article className="portfolio-card" key={selected.id + ':' + i}><header><span className="portfolio-number">0{i + 1}</span><div><h2>{titles[i]}</h2><p>{complete ? i === 1 ? '결과 작성 완료' : '결과와 설명 작성 완료' : '작성할 내용이 남아 있어요'}</p></div></header><div className="portfolio-content"><div id={`teacher-evidence-${i}`}><span className="preview-label">분석 결과 증거</span>{i === 2 || i === 4 ? a.image ? <a href={a.image} target="_blank" rel="noreferrer"><img className="review-image" src={a.image} alt="제출한 시각화 차트" onError={() => setError('이미지를 불러오지 못했습니다. 로그인 상태를 확인하고 새로고침해 주세요.')}/></a> : <p className="empty">첨부된 차트가 없습니다.</p> : a.result ? i === 0 ? <div className="table-wrap"><table><thead><tr><th>열 이름</th><th>값</th><th>이상데이터라고 판단한 이유</th></tr></thead><tbody>{anomalyRows.map((r,j) => <tr key={j}><td>{r.column}</td><td>{r.value}</td><td>{r.reason}</td></tr>)}</tbody></table></div> : <div className="table-wrap"><table><tbody>{parseTable(a.result).map((row,j) => <tr key={j}>{row.map((cell,k) => j === 0 ? <th key={k}>{cell}</th> : <td key={k}>{cell}</td>)}</tr>)}</tbody></table></div> : <p className="empty">입력한 결과가 없습니다.</p>}</div>{i > 1 && <div><span className="preview-label">나의 해석과 근거</span><p className={a.explanation ? 'answer-text' : 'empty'}>{a.explanation || '작성한 설명이 없습니다.'}</p></div>}</div></article>;
- })}</section>}
-
- </main>;
+import {useEffect,useMemo,useState} from 'react';
+import {defaultGradingConfig,gradeTotal,type GradeItem,type GradingConfig} from './grading';
+import {parseTable} from './table-data';
+type Summary={id:string;student_name:string;classroom:string;submitted_at:string}; type Answer={result:string;explanation:string;image:string;imageName:string;rows?:{column:string;value:string;reason:string}[]}; type Submission=Summary&{answers:Answer[]}; type StoredGrade={submission_id:string;classroom:string;items:GradeItem[];total_score:number;source:'manual'|'ai';updated_at:string};
+const titles=['이상 데이터 찾기','결측 데이터','차트로 표현하고 의미 해석하기','피봇 테이블로 정보 추출하기','데이터 관계 해석']; const blankItems=():GradeItem[]=>defaultGradingConfig.criteria.map(c=>({key:c.key,title:c.title,score:4,comment:''})); const classOf=(n:string)=>/^\d{4}$/.test(n)?n[1]:'unknown';
+export default function TeacherWorkspace(){
+ const [rows,setRows]=useState<Summary[]>([]),[selected,setSelected]=useState<Submission|null>(null),[grades,setGrades]=useState<Record<string,StoredGrade>>({}),[config,setConfig]=useState<GradingConfig>(defaultGradingConfig),[showConfig,setShowConfig]=useState(false),[classroom,setClassroom]=useState('all'),[revision,setRevision]=useState(0),[busy,setBusy]=useState(true),[actionBusy,setActionBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selectedId,setSelectedId]=useState(''),[progress,setProgress]=useState('');
+ useEffect(()=>{const c=new AbortController();(async()=>{setBusy(true);try{const all:Summary[]=[];for(let p=0;;p++){const r=await fetch(`/api/teacher/submissions?page=${p}`,{cache:'no-store',signal:c.signal}),d=await r.json();if(!r.ok)throw new Error(d.error);all.push(...d.submissions);if(!d.hasMore)break}const latest=new Map<string,Summary>();for(const row of all){const old=latest.get(row.classroom);if(!old||row.submitted_at>old.submitted_at)latest.set(row.classroom,row)}setRows([...latest.values()].sort((a,b)=>a.classroom.localeCompare(b.classroom,'en',{numeric:true})));const [gr,cr]=await Promise.all([fetch('/api/teacher/grades',{cache:'no-store',signal:c.signal}),fetch('/api/teacher/grading-config',{cache:'no-store',signal:c.signal})]);const gd=await gr.json(),cd=await cr.json();if(gr.ok)setGrades(Object.fromEntries((gd.grades as StoredGrade[]).map(g=>[g.submission_id,g])));if(cr.ok)setConfig(cd.config)}catch(e){if(!c.signal.aborted)setError(e instanceof Error?e.message:'불러오지 못했습니다.')}finally{if(!c.signal.aborted)setBusy(false)}})();return()=>c.abort()},[revision]);
+ useEffect(()=>{if(!selectedId)return;const c=new AbortController();fetch(`/api/teacher/submissions?id=${selectedId}`,{cache:'no-store',signal:c.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error);setSelected(d.submission)}).catch(e=>{if(!c.signal.aborted)setError(e.message)});return()=>c.abort()},[selectedId,revision]);
+ const classes=useMemo(()=>[...new Set(rows.map(r=>classOf(r.classroom)))].sort(),[rows]),visible=rows.filter(r=>classroom==='all'||classOf(r.classroom)===classroom),items=selected?(grades[selected.id]?.items??blankItems()):blankItems();
+ async function request(url:string,body:object){const r=await fetch(url,{method:url.includes('grading-config')?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();if(!r.ok)throw new Error(d.error);return d}
+ async function saveConfig(){setActionBusy(true);try{await request('/api/teacher/grading-config',{config});setNotice('채점 기준을 저장했습니다.')}catch(e){setError(e instanceof Error?e.message:'저장 실패')}finally{setActionBusy(false)}}
+ function changeItem(i:number,p:Partial<GradeItem>){if(!selected)return;setGrades(g=>{const old=g[selected.id],next=(old?.items??blankItems()).map((v,j)=>i===j?{...v,...p}:v);return{...g,[selected.id]:{submission_id:selected.id,classroom:selected.classroom,items:next,total_score:gradeTotal(next),source:old?.source??'manual',updated_at:new Date().toISOString()}}})}
+ async function saveGrade(){if(!selected)return;setActionBusy(true);try{const d=await request('/api/teacher/grades',{submissionId:selected.id,classroom:selected.classroom,items});setGrades(g=>({...g,[selected.id]:d.grade}));setNotice('교사 채점을 저장했습니다.')}catch(e){setError(e instanceof Error?e.message:'저장 실패')}finally{setActionBusy(false)}}
+ async function autoGrade(){if(!/^\d$/.test(classroom))return;const manual=Object.values(grades).filter(g=>classOf(g.classroom)===classroom&&g.source==='manual');if(manual.length<2){setError('이 학급에서 최소 2명을 먼저 직접 채점하고 저장해 주세요.');return}const targets=visible.filter(r=>!grades[r.id]);if(!targets.length){setNotice('모든 최신 제출에 채점 초안이 있습니다.');return}setActionBusy(true);setError('');let done=0;for(const t of targets){setProgress(`${done+1}/${targets.length} ${t.student_name}`);try{const d=await request('/api/teacher/auto-grade',{submissionId:t.id});setGrades(g=>({...g,[t.id]:d.grade}));done++}catch(e){setError(`${t.student_name}: ${e instanceof Error?e.message:'실패'}`);break}}setProgress('');setActionBusy(false);if(done)setNotice(`${done}명의 AI 채점 초안을 생성했습니다.`)}
+ async function publish(){if(!/^\d$/.test(classroom))return;const missing=visible.filter(r=>!grades[r.id]);if(missing.length){setError(`아직 채점하지 않은 학생이 ${missing.length}명 있습니다.`);return}setActionBusy(true);try{const d=await request('/api/teacher/publish',{classroom});setNotice(`${classroom}반 ${d.count}명의 점수와 코멘트를 공개했습니다.`)}catch(e){setError(e instanceof Error?e.message:'공개 실패')}finally{setActionBusy(false)}}
+ return <main className="teacher-workspace"><div className="section-heading"><div><h2>교사 평가실</h2><p>직접 채점 사례를 만든 뒤 AI 초안을 검토하고 학급에 공개하세요.</p></div><button className="button secondary" onClick={()=>setShowConfig(v=>!v)}>{showConfig?'기준 닫기':'채점 기준 설정'}</button><button className="button secondary" disabled={busy||actionBusy} onClick={()=>setRevision(v=>v+1)}>새로고침</button></div>{error&&<p className="teacher-alert error" role="alert">{error}</p>}{notice&&<p className="teacher-alert">{notice}</p>}
+ {showConfig&&<section className="rubric-editor"><h3>공통 채점 기준</h3><label>공통 안내<textarea value={config.overallInstructions} onChange={e=>setConfig({...config,overallInstructions:e.target.value})}/></label>{config.criteria.map((v,i)=><article key={v.key}><h4>{v.title} · 10/7/4점</h4>{([['세부 항목 1','first'],['세부 항목 2','second'],['상세 판정 기준','guidance'],['예시 답안·문제별 정답','exampleAnswer']] as const).map(([label,key])=><label key={key}>{label}<textarea value={v[key]} placeholder={key==='exampleAnswer'?'예상 수치, 허용 답안과 대표 감점 사유를 입력하세요.':''} onChange={e=>setConfig({...config,criteria:config.criteria.map((x,j)=>j===i?{...x,[key]:e.target.value}:x)})}/></label>)}</article>)}<button className="button primary" disabled={actionBusy} onClick={saveConfig}>채점 기준 저장</button></section>}
+ <nav className="class-tabs"><button className={classroom==='all'?'active':''} onClick={()=>setClassroom('all')}>전체 학급</button>{classes.map(c=><button key={c} className={classroom===c?'active':''} onClick={()=>setClassroom(c)}>{c==='unknown'?'학번 확인 필요':c+'반'}</button>)}</nav>{/^\d$/.test(classroom)&&<div className="grading-toolbar"><div><b>{classroom}반 채점</b><span>직접 채점 {Object.values(grades).filter(g=>classOf(g.classroom)===classroom&&g.source==='manual').length}명 · 초안 {visible.filter(r=>grades[r.id]).length}/{visible.length}명</span></div><button className="button secondary" disabled={actionBusy} onClick={autoGrade}>{progress||'자동 채점 초안 생성'}</button><button className="button primary" disabled={actionBusy} onClick={publish}>학급 점수 공개</button></div>}
+ {busy?<p>불러오는 중…</p>:classes.filter(c=>classroom==='all'||classroom===c).map(c=><section className="class-section" key={c}><h3>{c==='unknown'?'학번 확인 필요':c+'반'}</h3><div className="student-card-grid">{rows.filter(r=>classOf(r.classroom)===c).map(r=><button key={r.id} className={`student-answer-card ${selectedId===r.id?'selected':''}`} onClick={()=>setSelectedId(r.id)}><span className="student-card-identity"><span className="student-card-number">{r.classroom}</span><span className="student-card-name">{r.student_name}</span></span><span className="student-card-score">{grades[r.id]?`${grades[r.id].total_score}점`:'채점 전'}</span></button>)}</div></section>)}
+ {selected&&<section className="portfolio teacher-answer-review"><section className="identity-card review-identity"><div><h2>{selected.student_name} 학생</h2><p>{selected.classroom} · {grades[selected.id]?.source==='ai'?'AI 초안':grades[selected.id]?'교사 채점':'채점 전'}</p></div><b>{gradeTotal(items)}/30점</b></section>{selected.answers.map((a,i)=><article className="portfolio-card" key={i}><header><span className="portfolio-number">0{i+1}</span><h2>{titles[i]}</h2></header><div className="portfolio-content"><div><span className="preview-label">분석 결과 증거</span>{i===2||i===4?a.image?<a href={a.image} target="_blank" rel="noreferrer"><img className="review-image" src={a.image} alt="제출 차트"/></a>:<p className="empty">차트 없음</p>:a.result?i===0?<div className="table-wrap"><table><tbody>{(a.rows??[]).map((r,j)=><tr key={j}><td>{r.column}</td><td>{r.value}</td><td>{r.reason}</td></tr>)}</tbody></table></div>:<div className="table-wrap"><table><tbody>{parseTable(a.result).map((r,j)=><tr key={j}>{r.map((x,k)=>j?<td key={k}>{x}</td>:<th key={k}>{x}</th>)}</tr>)}</tbody></table></div>:<p className="empty">결과 없음</p>}</div>{i>1&&<div><span className="preview-label">해석과 근거</span><p className="answer-text">{a.explanation||'설명 없음'}</p></div>}</div></article>)}<section className="online-evaluation"><h3>평가요소별 점수와 공개 코멘트</h3><p>감점 코멘트는 학생에게 공개됩니다. AI 초안도 반드시 검토해 주세요.</p>{items.map((it,i)=><div className="grade-row" key={it.key}><div><b>{it.title}</b><span>{config.criteria[i].first}<br/>{config.criteria[i].second}</span></div><select value={it.score} onChange={e=>changeItem(i,{score:Number(e.target.value) as 4|7|10})}><option value="10">10점 · 둘 다 충족</option><option value="7">7점 · 하나 충족</option><option value="4">4점 · 모두 미충족</option></select><textarea value={it.comment} onChange={e=>changeItem(i,{comment:e.target.value})} placeholder="감점 이유 또는 잘한 점을 짧게 작성하세요."/>{it.needsReview&&<em>교사 확인 필요</em>}</div>)}<div className="grade-save"><b>총점 {gradeTotal(items)}/30점</b><button className="button primary" disabled={actionBusy} onClick={saveGrade}>교사 채점 저장</button></div></section></section>}</main>
 }

@@ -52,3 +52,7 @@ Production에 `TEACHER_PASSWORD`, `TEACHER_SESSION_SECRET`(32자 이상)을 서�
 ### 교사 제출 목록 조회
 
 교사 평가실은 서버 제출 목록을 50건씩 최신순으로 표시하며 제출별 답안을 확인합니다. 학생의 로컬 답안과 교사 조회 데이터를 분리합니다. `grant select on table public.submissions to service_role;`를 SQL Editor에서 실행해야 합니다. 학생 anon/authenticated에는 SELECT를 부여하지 않습니다. 목록과 상세 답안 및 Storage 이미지 요청은 모두 교사 쿠키를 서버에서 확인합니다. Storage 이미지는 인증된 서버 프록시로 표시하며 버킷은 비공개로 유지합니다. 모든 조회 응답은 no-store입니다. 기존 Base64 제출도 표시합니다. 재제출은 별도 제출 기록으로 나열합니다. 현재 이 화면은 열람 기능이며 점수 저장·AI 평가는 다음 단계입니다.
+
+### 온라인 채점과 점수 공개
+
+`supabase-grading.sql`을 Supabase SQL Editor에서 한 번 실행합니다. Vercel Production 환경변수에 `OPENAI_API_KEY`를 추가하고, 필요하면 `OPENAI_MODEL`을 설정합니다(미설정 시 `gpt-4.1-mini`). 교사는 세 평가요소의 예시 답안과 상세 기준을 저장하고 학급별 최소 2명을 직접 채점한 뒤 나머지 학생의 AI 초안을 생성할 수 있습니다. 초안은 수정·저장할 수 있으며 `학급 점수 공개`를 누른 시점의 점수와 코멘트만 학생 화면에 표시됩니다. OpenAI 키는 서버에서만 사용합니다.
