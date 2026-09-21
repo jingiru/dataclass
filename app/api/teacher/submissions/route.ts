@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     if (!id) {
       const page = Number(params.get('page') ?? 0);
       if (!Number.isSafeInteger(page) || page < 0 || page > 100000) return json({ error: '올바른 페이지가 아닙니다.' }, 400);
-      const response = await fetch(`${base}/rest/v1/submissions?select=id,student_name,classroom,submitted_at&order=classroom.asc,submitted_at.desc,id.desc&limit=51&offset=${page * 50}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(25000) });
+      const response = await fetch(`${base}/rest/v1/submissions?select=id,student_name,classroom,round,submitted_at&order=round.asc,classroom.asc,submitted_at.desc,id.desc&limit=51&offset=${page * 50}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(25000) });
       if (!response.ok) return json({ error: '제출 목록을 불러오지 못했습니다. 서버의 SELECT 권한을 확인해 주세요.' }, 502);
       const rows = await response.json() as unknown[];
       return json({ submissions: rows.slice(0, 50), hasMore: rows.length > 50 });

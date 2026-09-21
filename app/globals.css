@@ -33,6 +33,8 @@
 .student-answer-card { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:stretch; gap:8px; min-height:78px; padding:12px; border:1px solid #dfe5dd; border-radius:12px; background:#fff; text-align:left; cursor:pointer; color:#183f31; }
 .student-answer-card:hover { border-color:#72937d; box-shadow:0 4px 14px #25483312; }
 .student-answer-card.selected { border-color:#3e6353; background:#f0f5ed; box-shadow:inset 0 0 0 1px #3e6353; }
+.basic-info .identity-card select{display:block;padding:11px;margin-top:8px;width:190px;font-size:12px;border:1px solid #dce3da;border-radius:8px;background:#fbfcf9;color:var(--ink)}
+@media(max-width:720px){.basic-info .identity-card select{width:100%}}
 .student-answer-card:focus-visible,.class-tabs button:focus-visible { outline:3px solid #7b9c8b; outline-offset:3px; }
 .student-card-identity { display:flex; min-width:0; flex-direction:column; justify-content:center; gap:4px; }
 .student-card-number { display:block; font-size:11px; line-height:1.25; color:#718174; }

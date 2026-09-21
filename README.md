@@ -35,6 +35,8 @@ npm run dev
 
 ## Supabase 온라인 제출
 
+회차 기능을 배포하기 전에 이 앱이 연결된 Supabase 프로젝트의 SQL Editor에서 [`supabase-rounds.sql`](supabase-rounds.sql)을 한 번 실행합니다. 기존 제출과 채점은 1회차로 분류됩니다. 학생은 기본 정보에서 1~5회차를 선택하며, 교사 평가실은 `1회차 1반`, `2회차 1반`처럼 회차와 반별로 최신 제출을 보여줍니다. 수정 후 다른 회차로 다시 제출할 수 있습니다. 회차별 채점과 공개 점수도 분리됩니다.
+
 Vercel Production 환경변수에 `SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 등록합니다. Secret key는 서버에서만 사용하며 GitHub에 저장하지 않습니다. `public.submissions`의 열은 `id uuid`, `student_name text`, `classroom text`, `answers jsonb`, `submitted_at timestamptz`입니다. `classroom`에는 4자리 학번을 저장합니다. RLS를 활성화하고 anon/authenticated 권한은 부여하지 않습니다. Data API 자동 권한 부여를 끈 프로젝트에서는 서버 역할의 INSERT 권한이 필요합니다: `grant insert on table public.submissions to service_role;`.
 
 제출하기는 `/api/submissions`를 통해 답안 전체를 저장합니다. 이미지 원본 data URL과 이미지 이름, 설명, 표 원문 및 이상 데이터 행을 answers에 보관합니다. 전체 JSON 요청은 4MiB 이하, 이미지 한 장은 2MiB 이하입니다. 용량 초과와 저장 실패 시 작성 내용을 유지합니다. 파일 내보내기는 백업용으로 계속 사용할 수 있습니다. 다시 제출하면 새 행이 생성됩니다. 서버 제출 목록 조회와 교사 인증은 별도 구현이 필요합니다. 학생 로그인 없이 제출하므로 학번의 실제 소유자는 인증하지 않습니다.

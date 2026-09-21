@@ -20,6 +20,7 @@ type Work = {
   version: 4;
   name: string;
   classroom: string;
+  round: number;
   answers: Answer[];
   submittedAt: string;
   scores: (number | null)[];
@@ -32,6 +33,7 @@ const blank = (): Work => ({
   version: 4,
   name: '',
   classroom: '',
+  round: 1,
   answers: Array.from({ length: 5 }, () => ({
     result: '',
     explanation: '',
@@ -228,6 +230,7 @@ function isWork(value: unknown): value is Work | LegacyWork {
     (w.version === 4 || Number(w.version) === 3) &&
     typeof w.name === 'string' &&
     typeof w.classroom === 'string' &&
+    (w.round === undefined || (Number.isInteger(w.round) && w.round >= 1 && w.round <= 5)) &&
     typeof w.submittedAt === 'string' &&
     typeof w.reviewed === 'boolean' &&
     Array.isArray(w.answers) &&
@@ -260,10 +263,11 @@ function isWork(value: unknown): value is Work | LegacyWork {
   );
 }
 function migrateWork(work: Work | LegacyWork): Work {
-  if (work.version === 4) return work;
+  if (work.version === 4) return { ...work, round: work.round ?? 1 };
   return {
     ...work,
     version: 4,
+    round: 1,
     answers: [
       work.answers[0],
       blank().answers[1],
@@ -452,11 +456,11 @@ export default function Home() {
   useEffect(() => {
     if (!work.submissionId || !/^\d{4}$/.test(work.classroom)) return;
     const controller = new AbortController();
-    fetch(`/api/results?submissionId=${encodeURIComponent(work.submissionId)}&classroom=${work.classroom}`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/results?submissionId=${encodeURIComponent(work.submissionId)}&classroom=${work.classroom}&round=${work.round}`, { cache: 'no-store', signal: controller.signal })
       .then(async response => { const data = await response.json() as {published?:boolean;result?:{items:{title:string;score:number;comment:string}[];total:number}}; setPublishedResult(response.ok && data.published && data.result ? data.result : null); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [work.submissionId, work.classroom]);
+  }, [work.submissionId, work.classroom, work.round]);
   async function enterTeacher() {
     setTeacherBusy(true);
     setTeacherError('');
@@ -721,6 +725,7 @@ export default function Home() {
         JSON.stringify({
           name: work.name,
           classroom: work.classroom,
+          round: work.round,
           answers: metadata,
         }),
       ]).size >
@@ -773,6 +778,7 @@ export default function Home() {
       const body = JSON.stringify({
         name: work.name,
         classroom: work.classroom,
+        round: work.round,
         answers,
       });
       const response = await fetch('/api/submissions', {
@@ -961,7 +967,7 @@ export default function Home() {
                   <span className="section-icon mint">00</span>
                   <div>
                     <h2>기본 정보 입력</h2>
-                    <p>학번과 이름을 입력해 주세요.</p>
+                    <p>학번, 이름과 회차를 입력해 주세요.</p>
                   </div>
                 </div>
                 <div className="identity-card">
@@ -998,6 +1004,12 @@ export default function Home() {
                       }
                       placeholder="이름 입력"
                     />
+                  </label>
+                  <label htmlFor="submission-round">
+                    회차
+                    <select id="submission-round" value={work.round} disabled={locked || teacher || !ready} onChange={(e) => setWork((w) => ({ ...w, round: Number(e.target.value) }))}>
+                      {[1, 2, 3, 4, 5].map((round) => <option key={round} value={round}>{round}회차</option>)}
+                    </select>
                   </label>
                 </div>
                 <p className="field-help identity-help">
@@ -1251,6 +1263,7 @@ export default function Home() {
                       <dt>이름</dt>
                       <dd>{work.name || '미입력'}</dd>
                     </div>
+                    <div><dt>회차</dt><dd>{work.round}회차</dd></div>
                   </dl>
                 </section>
                 {tasks.map((t, i) => (
