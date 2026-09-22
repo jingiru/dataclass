@@ -177,6 +177,7 @@ const tasks = [
 const KEY = 'datapick-portfolio-v4';
 const LEGACY_KEY = 'datapick-portfolio-v3';
 const TEACHER_VIEW_KEY = 'datapick-teacher-view';
+const TEACHER_SUMMARY_CACHE_KEY = 'datapick-teacher-summaries-v1';
 function openStore(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('datapick-portfolio', 1);
@@ -471,6 +472,7 @@ export default function Home() {
           setTeacher(true);
           navigate(5);
         } else {
+          sessionStorage.removeItem(TEACHER_SUMMARY_CACHE_KEY);
           setTeacherLogin(true);
         }
       })
@@ -551,6 +553,7 @@ export default function Home() {
       });
       if (!response.ok) throw new Error();
       sessionStorage.removeItem(TEACHER_VIEW_KEY);
+      sessionStorage.removeItem(TEACHER_SUMMARY_CACHE_KEY);
       setTeacher(false);
       setTeacherLogin(false);
       navigate(-1);
@@ -570,11 +573,15 @@ export default function Home() {
         });
         const session = (await response.json()) as { authenticated?: boolean };
         if (!cancelled && (!response.ok || !session.authenticated)) {
+          sessionStorage.removeItem(TEACHER_SUMMARY_CACHE_KEY);
           setTeacher(false);
           setNotice('교사 로그인이 만료되었습니다. 다시 로그인해 주세요.');
         }
       } catch {
-        if (!cancelled) setTeacher(false);
+        if (!cancelled) {
+          sessionStorage.removeItem(TEACHER_SUMMARY_CACHE_KEY);
+          setTeacher(false);
+        }
       }
     }
     const timer = setInterval(() => void check(), 60000);
@@ -917,6 +924,7 @@ export default function Home() {
             className={!teacher ? 'selected' : ''}
             onClick={() => {
               sessionStorage.removeItem(TEACHER_VIEW_KEY);
+              sessionStorage.removeItem(TEACHER_SUMMARY_CACHE_KEY);
               setTeacher(false);
             }}
           >
