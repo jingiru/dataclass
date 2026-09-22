@@ -176,6 +176,7 @@ const tasks = [
 ];
 const KEY = 'datapick-portfolio-v4';
 const LEGACY_KEY = 'datapick-portfolio-v3';
+const TEACHER_VIEW_KEY = 'datapick-teacher-view';
 function openStore(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('datapick-portfolio', 1);
@@ -445,6 +446,7 @@ export default function Home() {
   );
   const [active, setActive] = useState(-1);
   const [teacher, setTeacher] = useState(false);
+  const [restoringTeacher, setRestoringTeacher] = useState(true);
   const [teacherLogin, setTeacherLogin] = useState(false);
   const [teacherPassword, setTeacherPassword] = useState('');
   const [teacherError, setTeacherError] = useState('');
@@ -453,6 +455,34 @@ export default function Home() {
   const [publishedResult, setPublishedResult] = useState<{items:{title:string;score:number;comment:string}[];total:number}|null>(null);
   const [saved, setSaved] = useState('불러오는 중');
   const importInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (sessionStorage.getItem(TEACHER_VIEW_KEY) !== 'true') {
+      let cancelled = false;
+      queueMicrotask(() => {
+        if (!cancelled) setRestoringTeacher(false);
+      });
+      return () => { cancelled = true; };
+    }
+    const controller = new AbortController();
+    fetch('/api/teacher/session', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const session = (await response.json()) as { authenticated?: boolean };
+        if (response.ok && session.authenticated) {
+          setTeacher(true);
+          navigate(5);
+        } else {
+          setTeacherLogin(true);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setNotice('교사 로그인 서버에 연결하지 못했습니다.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRestoringTeacher(false);
+      });
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     if (!work.submissionId || !/^\d{4}$/.test(work.classroom)) return;
     const controller = new AbortController();
@@ -470,6 +500,7 @@ export default function Home() {
       });
       const session = (await response.json()) as { authenticated?: boolean };
       if (response.ok && session.authenticated) {
+        sessionStorage.setItem(TEACHER_VIEW_KEY, 'true');
         setTeacher(true);
         navigate(5);
       } else {
@@ -499,6 +530,7 @@ export default function Home() {
       };
       if (!response.ok || !session.authenticated)
         throw new Error(session.error || '로그인하지 못했습니다.');
+      sessionStorage.setItem(TEACHER_VIEW_KEY, 'true');
       setTeacher(true);
       setTeacherLogin(false);
       navigate(5);
@@ -518,6 +550,7 @@ export default function Home() {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error();
+      sessionStorage.removeItem(TEACHER_VIEW_KEY);
       setTeacher(false);
       setTeacherLogin(false);
       navigate(-1);
@@ -882,7 +915,10 @@ export default function Home() {
         <div className="mode-switch">
           <button
             className={!teacher ? 'selected' : ''}
-            onClick={() => setTeacher(false)}
+            onClick={() => {
+              sessionStorage.removeItem(TEACHER_VIEW_KEY);
+              setTeacher(false);
+            }}
           >
             학생 작업실
           </button>
@@ -903,7 +939,9 @@ export default function Home() {
           <i /> 데이터 분석 작업실
         </span>
       </header>
-      {teacher ? (
+      {restoringTeacher ? (
+        <main>교사 평가실을 불러오는 중…</main>
+      ) : teacher ? (
         <TeacherWorkspace />
       ) : (
         <div className="shell">
