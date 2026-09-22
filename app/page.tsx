@@ -721,10 +721,8 @@ export default function Home() {
   }
   async function submit() {
     if (submissionBusy.current || !ready || work.submittedAt) return;
-    if (!work.name.trim() || !/^\d{4}$/.test(work.classroom) || count < 5) {
-      setNotice(
-        '4자리 학번과 이름, 다섯 수행의 필수 항목을 모두 작성해 주세요.',
-      );
+    if (!work.name.trim() || !/^\d{4}$/.test(work.classroom)) {
+      setNotice('4자리 학번과 이름을 입력해 주세요.');
       return;
     }
     const metadata = work.answers.map((a) => ({ ...a, image: '' }));

@@ -1,4 +1,3 @@
-import { isTableResult } from '../../table-data';
 import { validImageReceipt, IMAGE_BUCKET } from '../image-receipt';
 
 export const runtime = 'nodejs';
@@ -29,8 +28,6 @@ export async function POST(request: Request) {
     try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return error('올바른 제출 형식이 아닙니다.', 400); }
     if (!data || typeof data.name !== 'string' || !data.name.trim() || data.name.length > 100 || typeof data.classroom !== 'string' || !/^\d{4}$/.test(data.classroom) || !Number.isInteger(data.round) || data.round < 1 || data.round > 5 || !Array.isArray(data.answers) || data.answers.length !== 5 || !data.answers.every((a: unknown) => validAnswer(a, data.classroom))) return error('학번, 이름, 회차와 답안 형식을 확인해 주세요.', 400);
     const answers: Answer[] = data.answers;
-    const rows = answers[0].rows ?? [{ column: '', value: answers[0].result, reason: answers[0].explanation }];
-    if (!rows.some(r => r.column.trim() && r.value.trim() && r.reason.trim()) || !rows.filter(r => r.column.trim() || r.value.trim() || r.reason.trim()).every(r => r.column.trim() && r.value.trim() && r.reason.trim()) || !isTableResult(answers[1].result) || !isTableResult(answers[3].result) || !answers[3].explanation.trim() || ![2, 4].every(i => (answers[i].image || answers[i].imagePath) && answers[i].explanation.trim())) return error('다섯 수행의 필수 항목을 모두 작성해 주세요.', 400);
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SECRET_KEY;
     if (!url || !key) return error('제출 서버 연결 설정이 필요합니다. 선생님께 알려 주세요.', 503);
