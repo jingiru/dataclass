@@ -622,6 +622,7 @@ export default function Home() {
   );
   const count = complete.filter(Boolean).length;
   const locked = Boolean(work.submittedAt) || submitting;
+  const identityLocked = submitting || teacher || !ready;
   const task = tasks[Math.max(0, Math.min(active, 4))];
   const answer = work.answers[Math.max(0, Math.min(active, 4))];
   function update(field: keyof Answer, value: string) {
@@ -651,6 +652,13 @@ export default function Home() {
   }
   function navigate(i: number) {
     setActive(i);
+  }
+  function changeRound(round: number) {
+    if (round === work.round) return;
+    uploadedImages.current.clear();
+    setPublishedResult(null);
+    setWork((w) => ({ ...blank(), name: w.name, classroom: w.classroom, round }));
+    setNotice(`${round}회차 답안을 새로 시작합니다.`);
   }
   async function attach(file: File) {
     if (locked || teacher) return;
@@ -980,7 +988,7 @@ export default function Home() {
                       pattern="[0-9]{4}"
                       required
                       value={work.classroom}
-                      disabled={locked || teacher || !ready}
+                      disabled={identityLocked}
                       onChange={(e) =>
                         setWork((w) => ({
                           ...w,
@@ -998,7 +1006,7 @@ export default function Home() {
                       id="student-name"
                       required
                       value={work.name}
-                      disabled={locked || teacher || !ready}
+                      disabled={identityLocked}
                       onChange={(e) =>
                         setWork((w) => ({ ...w, name: e.target.value }))
                       }
@@ -1007,7 +1015,7 @@ export default function Home() {
                   </label>
                   <label htmlFor="submission-round">
                     회차
-                    <select id="submission-round" value={work.round} disabled={locked || teacher || !ready} onChange={(e) => setWork((w) => ({ ...w, round: Number(e.target.value) }))}>
+                    <select id="submission-round" value={work.round} disabled={identityLocked} onChange={(e) => changeRound(Number(e.target.value))}>
                       {[1, 2, 3, 4, 5].map((round) => <option key={round} value={round}>{round}회차</option>)}
                     </select>
                   </label>
