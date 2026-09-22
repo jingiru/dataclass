@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams, id = params.get('id'), image = params.get('image'), since = params.get('since');
   if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return json({ error: '올바른 제출 ID가 아닙니다.' }, 400);
   if (image !== null && (!id || !/^[0-4]$/.test(image))) return json({ error: '올바른 이미지 요청이 아닙니다.' }, 400);
-  if (since !== null && (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(since) || Number.isNaN(Date.parse(since)))) return json({ error: '올바른 갱신 시각이 아닙니다.' }, 400);
+  if (since !== null && (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-]\d\d:\d\d)$/.test(since) || Number.isNaN(Date.parse(since)))) return json({ error: '올바른 갱신 시각이 아닙니다.' }, 400);
   const base = url.replace(/\/$/, '');
   const headers = { apikey: key, Authorization: `Bearer ${key}` };
   try {
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
       const page = Number(params.get('page') ?? 0);
       if (!Number.isSafeInteger(page) || page < 0 || page > 100000) return json({ error: '올바른 페이지가 아닙니다.' }, 400);
       const query = new URLSearchParams({ select: 'id,student_name,classroom,round,submitted_at', order: since ? 'submitted_at.asc,id.asc' : 'round.asc,classroom.asc,submitted_at.desc,id.desc', limit: '51', offset: String(page * 50) });
-      if (since) query.set('submitted_at', `gte.${since}`);
+      if (since) query.set('submitted_at', `gte.${new Date(since).toISOString()}`);
       const response = await fetch(`${base}/rest/v1/submissions?${query}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(25000) });
       if (!response.ok) return json({ error: '제출 목록을 불러오지 못했습니다. 서버의 SELECT 권한을 확인해 주세요.' }, 502);
       const rows = await response.json() as unknown[];
