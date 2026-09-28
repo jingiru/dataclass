@@ -4,6 +4,7 @@ import { hasTeacherSession } from '../../teacher-session';
 import { defaultGradingConfig, gradeTotal, validGradeItems, type GradeItem } from '../../../grading';
 import { json, loadConfig, sameOrigin, supabase } from '../grading-store';
 export const runtime='nodejs'; export const maxDuration=60;
+const EVALUATION_ROUND=2;
 type Answer={result?:string;explanation?:string;rows?:unknown;image?:string;imagePath?:string;imageBucket?:string};
 async function imageData(db:NonNullable<ReturnType<typeof supabase>>,answer:Answer){
   if(typeof answer.image==='string'&&/^data:image\/(png|jpeg|webp);base64,/.test(answer.image))return answer.image;
@@ -17,6 +18,7 @@ export async function POST(request:Request){
   try{
     const {submissionId}=await request.json() as {submissionId?:unknown};if(typeof submissionId!=='string'||!/^[0-9a-f-]{36}$/i.test(submissionId))return json({error:'제출 ID를 확인해 주세요.'},400);
     const sr=await fetch(`${db.url}/rest/v1/submissions?select=id,classroom,round,answers&id=eq.${submissionId}&limit=1`,{headers:db.headers,cache:'no-store'});if(!sr.ok)return json({error:'학생 답안을 불러오지 못했습니다.'},502);const [submission]=await sr.json() as {id:string;classroom:string;round:number;answers:Answer[]}[];if(!submission)return json({error:'학생 답안을 찾을 수 없습니다.'},404);
+    if(submission.round!==EVALUATION_ROUND)return json({error:'2회차 제출만 자동 채점할 수 있습니다.'},403);
     const classroom=submission.classroom[1];
     const cr=await fetch(`${db.url}/rest/v1/grading_results?select=submission_id,items&classroom=like._${classroom}__&round=eq.${submission.round}&source=eq.manual&limit=5`,{headers:db.headers,cache:'no-store'});if(!cr.ok)return json({error:'교사 채점 예시를 불러오지 못했습니다.'},502);const calibrations=await cr.json() as {submission_id:string;items:unknown}[];if(calibrations.length<2)return json({error:'이 학급에서 최소 2명의 답안을 먼저 직접 채점해 주세요.'},400);
     const er=await fetch(`${db.url}/rest/v1/submissions?select=id,answers&id=in.(${calibrations.map(c=>c.submission_id).join(',')})`,{headers:db.headers,cache:'no-store'});const exemplarAnswers=er.ok?await er.json() as {id:string;answers:Answer[]}[]:[];

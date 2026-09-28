@@ -3,6 +3,7 @@ import { hasTeacherSession } from '../../teacher-session';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const json = (data: object, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
+const EVALUATION_ROUND = 2;
 export async function GET(request: Request) {
   if (!hasTeacherSession(request)) return json({ error: '교사 로그인이 필요합니다.' }, 401);
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SECRET_KEY;
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
     if (!id) {
       const page = Number(params.get('page') ?? 0);
       if (!Number.isSafeInteger(page) || page < 0 || page > 100000) return json({ error: '올바른 페이지가 아닙니다.' }, 400);
-      const query = new URLSearchParams({ select: 'id,student_name,classroom,round,submitted_at', order: since ? 'submitted_at.asc,id.asc' : 'round.asc,classroom.asc,submitted_at.desc,id.desc', limit: '51', offset: String(page * 50) });
+      const query = new URLSearchParams({ select: 'id,student_name,classroom,round,submitted_at', round: `eq.${EVALUATION_ROUND}`, order: since ? 'submitted_at.asc,id.asc' : 'classroom.asc,submitted_at.desc,id.desc', limit: '51', offset: String(page * 50) });
       if (since) query.set('submitted_at', `gte.${new Date(since).toISOString()}`);
       const response = await fetch(`${base}/rest/v1/submissions?${query}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(25000) });
       if (!response.ok) return json({ error: '제출 목록을 불러오지 못했습니다. 서버의 SELECT 권한을 확인해 주세요.' }, 502);
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
     if (!response.ok) return json({ error: '답안을 불러오지 못했습니다. 서버의 SELECT 권한을 확인해 주세요.' }, 502);
     const [submission] = await response.json() as { answers: Record<string, unknown>[]; [key: string]: unknown }[];
     if (!submission) return json({ error: '제출을 찾을 수 없습니다.' }, 404);
+    if (submission.round !== EVALUATION_ROUND) return json({ error: '2회차 제출만 평가할 수 있습니다.' }, 403);
     if (!Array.isArray(submission.answers)) return json({ error: '답안 형식을 확인해 주세요.' }, 502);
     if (image !== null) {
       const answer = submission.answers[Number(image)];

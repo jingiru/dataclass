@@ -3,6 +3,7 @@ import { json, sameOrigin, supabase } from '../grading-store';
 
 export const runtime = 'nodejs';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EVALUATION_ROUND = 2;
 
 export async function POST(request: Request) {
   if (!hasTeacherSession(request)) return json({ error: '교사 로그인이 필요합니다.' }, 401);
@@ -11,8 +12,8 @@ export async function POST(request: Request) {
   if (!db) return json({ error: 'Supabase 연결 설정이 필요합니다.' }, 503);
   try {
     const { classroom, round, submissionIds } = await request.json() as { classroom?: unknown; round?: unknown; submissionIds?: unknown };
-    if (typeof classroom !== 'string' || !/^\d$/.test(classroom) || !Number.isInteger(round) || Number(round) < 1 || Number(round) > 5 || !Array.isArray(submissionIds) || !submissionIds.length || submissionIds.length > 1000 || !submissionIds.every(id => typeof id === 'string' && uuid.test(id)) || new Set(submissionIds).size !== submissionIds.length) {
-      return json({ error: '학급과 회차의 제출 목록을 확인해 주세요.' }, 400);
+    if (typeof classroom !== 'string' || !/^\d$/.test(classroom) || round !== EVALUATION_ROUND || !Array.isArray(submissionIds) || !submissionIds.length || submissionIds.length > 1000 || !submissionIds.every(id => typeof id === 'string' && uuid.test(id)) || new Set(submissionIds).size !== submissionIds.length) {
+      return json({ error: '2회차 학급의 제출 목록만 공개할 수 있습니다.' }, 400);
     }
     const r = await fetch(`${db.url}/rest/v1/grading_results?select=submission_id,items,total_score,updated_at&classroom=like._${classroom}__&round=eq.${round}&submission_id=in.(${submissionIds.join(',')})`, { headers: db.headers, cache: 'no-store' });
     if (!r.ok) return json({ error: '채점 결과를 불러오지 못했습니다.' }, 502);
