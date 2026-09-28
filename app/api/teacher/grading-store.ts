@@ -1,4 +1,4 @@
-import { defaultGradingConfig, type GradingConfig } from '../../grading';
+import { defaultGradingConfig, normalizeGradingConfig, type GradingConfig } from '../../grading';
 
 export const json = (data: object, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 export const sameOrigin = (request: Request) => request.headers.get('origin') === new URL(request.url).origin;
@@ -13,5 +13,5 @@ export async function loadConfig(): Promise<GradingConfig> {
   const response = await fetch(`${db.url}/rest/v1/grading_configs?id=eq.default&select=config&limit=1`, { headers: db.headers, cache: 'no-store' });
   if (!response.ok) throw new Error('채점 기준 테이블을 확인해 주세요.');
   const rows = await response.json() as { config: GradingConfig }[];
-  return rows[0]?.config ?? defaultGradingConfig;
+  return rows[0]?.config ? normalizeGradingConfig(rows[0].config) : defaultGradingConfig;
 }

@@ -2,7 +2,11 @@ export type CriterionScore = 4 | 7 | 10;
 export type GradeItem = { key: string; title: string; score: CriterionScore; comment: string; evidence?: string; needsReview?: boolean };
 export type GradeDraft = { items: GradeItem[]; total: number; source: 'manual' | 'ai'; updatedAt?: string };
 export type RubricCriterion = { key: string; title: string; first: string; second: string; guidance: string; exampleAnswer: string };
-export type GradingConfig = { criteria: RubricCriterion[]; overallInstructions: string; updatedAt?: string };
+export type ModelAnswerRow = { column: string; value: string; reason: string };
+export type ModelAnswer = { result: string; explanation: string; image: string; imageName: string; rows?: ModelAnswerRow[] };
+export type GradingConfig = { criteria: RubricCriterion[]; overallInstructions: string; modelAnswers: ModelAnswer[]; updatedAt?: string };
+
+export const blankModelAnswers = (): ModelAnswer[] => Array.from({ length: 5 }, () => ({ result: '', explanation: '', image: '', imageName: '' }));
 
 export const defaultGradingConfig: GradingConfig = {
   overallInstructions: '각 평가요소의 두 세부 항목을 독립적으로 판단한다. 둘 다 충족하면 10점, 하나만 충족하면 7점, 둘 다 충족하지 못하면 4점이다. 감점한 경우 보완할 점을 한두 문장으로 짧고 구체적으로 작성한다.',
@@ -11,7 +15,17 @@ export const defaultGradingConfig: GradingConfig = {
     { key: 'visualization', title: '데이터 분석 및 시각화', first: '분석 목적에 맞는 적절하고 읽을 수 있는 차트를 제출한다.', second: '차트에서 확인되는 의미를 명확하고 근거 있게 서술한다.', guidance: '차트 유형과 변수 선택, 제목·축·범례의 가독성을 확인한다. 해석이 실제 차트와 일치하며 근거 없는 인과관계를 단정하지 않는지 확인한다.', exampleAnswer: '' },
     { key: 'interpretation', title: '데이터 해석 및 판단', first: '조건과 목적에 맞는 피봇 테이블을 만들고 결과를 정확히 해석한다.', second: '두 데이터를 적절히 결합하여 관계를 차트로 표현하고 근거를 토대로 판단한다.', guidance: '피봇의 행·열·값·집계 방식과 수치 해석을 확인한다. 데이터 결합, 관계 분석, 차트 적절성, 상관과 인과의 구분을 확인한다.', exampleAnswer: '' },
   ],
+  modelAnswers: blankModelAnswers(),
 };
+
+export function normalizeGradingConfig(value?: Partial<GradingConfig> | null): GradingConfig {
+  return {
+    ...defaultGradingConfig,
+    ...value,
+    criteria: defaultGradingConfig.criteria.map((criterion, index) => ({ ...criterion, ...(value?.criteria?.[index] ?? {}) })),
+    modelAnswers: blankModelAnswers().map((answer, index) => ({ ...answer, ...(value?.modelAnswers?.[index] ?? {}) })),
+  };
+}
 
 export function validGradeItems(value: unknown): value is GradeItem[] {
   return Array.isArray(value) && value.length === 3 && value.every((item, index) => {
