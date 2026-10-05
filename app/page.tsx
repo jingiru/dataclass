@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ClipboardEvent } from 'react';
 import Link from 'next/link';
 import TeacherWorkspace from './teacher-workspace';
+import StudentResults from './student-results';
 import { isTableResult, parseTable, serializeTable } from './table-data';
 
 type Row = { column: string; value: string; reason: string };
@@ -989,6 +990,7 @@ export default function Home() {
                 <span>{teacher ? '전체 답안 평가' : '검토 및 제출'}</span>
                 <span className="nav-arrow">›</span>
               </button>
+              {!teacher && <button className={`nav-item ${active === 6 ? 'active' : ''}`} onClick={() => navigate(6)}><span className="nav-num">▤</span><span>점수 확인</span><span className="nav-arrow">›</span></button>}
             </nav>
           </aside>
           <main>
@@ -1013,7 +1015,7 @@ export default function Home() {
                 </p>
               </div>
             )}
-            {active === -1 ? (
+            {active === 6 ? <StudentResults /> : active === -1 ? (
               <section className="basic-info">
                 <div className="section-heading">
                   <span className="section-icon mint">00</span>
