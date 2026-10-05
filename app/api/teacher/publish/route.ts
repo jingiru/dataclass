@@ -18,15 +18,22 @@ export async function POST(request: Request) {
     const r = await fetch(`${db.url}/rest/v1/grading_results?select=submission_id,items,total_score,updated_at&classroom=like._${classroom}__&round=eq.${round}&submission_id=in.(${submissionIds.join(',')})`, { headers: db.headers, cache: 'no-store' });
     if (!r.ok) return json({ error: '채점 결과를 불러오지 못했습니다.' }, 502);
     const grades = await r.json() as { submission_id: string; items: unknown; total_score: number; updated_at: string }[];
-    if (grades.length !== submissionIds.length) return json({ error: '채점하지 않은 제출이 있습니다.' }, 400);
-    const results = Object.fromEntries(grades.map(g => [g.submission_id, { items: g.items, total: g.total_score, gradedAt: g.updated_at }]));
+    const submissions = await fetch(`${db.url}/rest/v1/submissions?select=id&classroom=like._${classroom}__&round=eq.${round}&id=in.(${submissionIds.join(',')})`, { headers: db.headers, cache: 'no-store' });
+    if (!submissions.ok) return json({ error: '공개할 제출 내역을 확인하지 못했습니다.' }, 502);
+    const verified = await submissions.json() as { id: string }[];
+    if (verified.length !== submissionIds.length) return json({ error: '학급과 회차의 제출 정보가 일치하지 않습니다.' }, 400);
+    const gradeMap = new Map(grades.map(g => [g.submission_id, g]));
+    const results = Object.fromEntries(verified.map(({ id }) => {
+      const grade = gradeMap.get(id);
+      return [id, grade ? { items: grade.items, total: grade.total_score, gradedAt: grade.updated_at } : { items: [], total: null, gradedAt: null }];
+    }));
     const publishedAt = new Date().toISOString();
     const save = await fetch(`${db.url}/rest/v1/class_score_publications?on_conflict=classroom,round`, {
       method: 'POST', headers: { ...db.headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ classroom, round, results, published_at: publishedAt }),
     });
     if (!save.ok) return json({ error: '학급 점수를 공개하지 못했습니다.' }, 502);
-    return json({ published: true, count: grades.length, publishedAt });
+    return json({ published: true, count: verified.length, gradedCount: grades.length, publishedAt });
   } catch {
     return json({ error: '점수 공개 요청을 확인해 주세요.' }, 400);
   }

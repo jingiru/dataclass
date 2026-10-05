@@ -13,14 +13,14 @@ export async function POST(request: Request) {
   if (!db) return json({ error: '결과 서버 연결 설정이 필요합니다.' }, 503);
   const read = (path: string) => fetch(`${db.url}${path}`, { headers: db.headers, cache: 'no-store', signal: AbortSignal.timeout(25000) });
   try {
-    const query = new URLSearchParams({ select: 'id,student_name,classroom,round,submitted_at,answers', classroom: `eq.${classroom}`, round: `eq.${round}`, student_name: `eq.${JSON.stringify(name.trim())}`, order: 'submitted_at.desc,id.desc', limit: '1' });
+    const query = new URLSearchParams({ select: 'id,student_name,classroom,round,submitted_at,answers', classroom: `eq.${classroom}`, round: `eq.${round}`, student_name: `eq.${name.trim()}`, order: 'submitted_at.desc,id.desc', limit: '1' });
     const response = await read(`/rest/v1/submissions?${query}`);
     if (!response.ok) throw new Error('제출 내역을 불러오지 못했습니다.');
     const [submission] = await response.json() as { id: string; student_name: string; submitted_at: string; answers: Answer[] }[];
     if (!submission) return json({ error: '일치하는 제출 내역이 없습니다. 학번, 이름과 회차를 확인해 주세요.' }, 404);
     const publication = await read(`/rest/v1/class_score_publications?select=results&classroom=eq.${classroom[1]}&round=eq.${round}&limit=1`);
     if (!publication.ok) throw new Error('평가 결과를 불러오지 못했습니다.');
-    const [row] = await publication.json() as { results: Record<string, { items: GradeItem[]; total: number }> }[];
+    const [row] = await publication.json() as { results: Record<string, { items: GradeItem[]; total: number | null }> }[];
     const grade = row?.results?.[submission.id];
     const answers = await Promise.all(submission.answers.map(async a => {
       let image = /^data:image\/(png|jpeg|webp);base64,/.test(a.image) ? a.image : '';

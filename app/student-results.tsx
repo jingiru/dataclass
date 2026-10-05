@@ -1,9 +1,9 @@
 'use client';
 /* eslint-disable @next/next/no-img-element */
 import { useRef, useState, type FormEvent } from 'react';
-import type { GradeItem } from './grading';
+import { defaultGradingConfig, type GradeItem } from './grading';
 import { parseTable } from './table-data';
-type Lookup = { submission: { student_name: string; classroom: string; round: number; submitted_at: string; answers: { result: string; explanation: string; image: string; rows?: { column: string; value: string; reason: string }[] }[] }; result: { items: GradeItem[]; total: number } | null };
+type Lookup = { submission: { student_name: string; classroom: string; round: number; submitted_at: string; answers: { result: string; explanation: string; image: string; rows?: { column: string; value: string; reason: string }[] }[] }; result: { items: GradeItem[]; total: number | null } | null };
 const titles = ['이상 데이터 찾기', '결측 데이터', '차트로 표현하고 의미 해석하기', '피봇 테이블로 정보 추출하기', '데이터 관계 해석'];
 export default function StudentResults() {
   const [classroom, setClassroom] = useState(''), [name, setName] = useState(''), [round, setRound] = useState(2);
@@ -28,8 +28,8 @@ export default function StudentResults() {
     </form>
     {error && <p className="teacher-alert error" role="alert">{error}</p>}
     <div aria-live="polite">{data && <>
-      <section className="student-score-result"><h2>{data.result ? `평가 결과 · ${data.result.total}/30점` : '평가 결과 공개 전'}</h2>
-        {data.result ? <div className="table-wrap"><table className="score-result-table"><thead><tr><th scope="col">평가 요소</th><th scope="col">점수</th><th scope="col">코멘트</th></tr></thead><tbody>{data.result.items.map(item => <tr key={item.key}><th scope="row">{item.title}</th><td>{item.score}/10점</td><td>{item.comment || '등록된 코멘트가 없습니다.'}</td></tr>)}</tbody></table></div> : <p>선생님이 학급 점수를 공개하면 점수와 코멘트를 확인할 수 있습니다.</p>}
+      <section className="student-score-result"><h2>{data.result ? data.result.total === null ? '평가 결과 · 채점 대기' : `평가 결과 · ${data.result.total}/30점` : '평가 결과 공개 전'}</h2>
+        {data.result ? <><div className="table-wrap"><table className="score-result-table"><thead><tr><th scope="col">평가 요소</th><th scope="col">점수</th><th scope="col">코멘트</th></tr></thead><tbody>{defaultGradingConfig.criteria.map(criterion => { const item = data.result?.items.find(item => item.key === criterion.key); return <tr key={criterion.key}><th scope="row">{criterion.title}</th><td>{item ? `${item.score}/10점` : ''}</td><td>{item?.comment || ''}</td></tr>; })}</tbody></table></div>{data.result.total === null && <p>제출 내역이 공개되었습니다. 아직 채점하지 않은 점수와 코멘트는 빈칸으로 표시됩니다.</p>}</> : <p>선생님이 학급 점수를 공개하면 점수와 코멘트를 확인할 수 있습니다.</p>}
       </section>
       <section className="identity-card review-identity"><div><h2>{data.submission.student_name} 학생의 제출 내역</h2><p>{data.submission.classroom} · {data.submission.round}회차 · {new Date(data.submission.submitted_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} 제출</p></div></section>
       {data.submission.answers.map((a, i) => <article className="portfolio-card" key={i}><header><span className="portfolio-number">0{i + 1}</span><h2>{titles[i]}</h2></header><div className="portfolio-content"><div><span className="preview-label">분석 결과 증거</span>{i === 2 || i === 4 ? a.image ? <a href={a.image} target="_blank" rel="noreferrer"><img className="review-image" src={a.image} alt="제출 차트" /></a> : <p className="empty">차트 없음</p> : a.result ? i === 0 ? <div className="table-wrap"><table><thead><tr><th>열 이름</th><th>값</th><th>이유</th></tr></thead><tbody>{(a.rows ?? []).map((r, j) => <tr key={j}><td>{r.column}</td><td>{r.value}</td><td>{r.reason}</td></tr>)}</tbody></table></div> : <div className="table-wrap"><table><tbody>{parseTable(a.result).map((r, j) => <tr key={j}>{r.map((x, k) => j ? <td key={k}>{x}</td> : <th key={k}>{x}</th>)}</tr>)}</tbody></table></div> : <p className="empty">결과 없음</p>}</div>{i > 1 && <div><span className="preview-label">해석과 근거</span><p className="answer-text">{a.explanation || '설명 없음'}</p></div>}</div></article>)}
