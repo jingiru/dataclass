@@ -28,7 +28,15 @@ export default function TeacherWorkspace(){
  useEffect(()=>{if(!selectedId)return;const c=new AbortController();fetch(`/api/teacher/submissions?id=${selectedId}`,{cache:'no-store',signal:c.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error);setSelected(d.submission)}).catch(e=>{if(!c.signal.aborted)setError(e.message)});return()=>c.abort()},[selectedId,revision]);
  const classes=useMemo(()=>[...new Set(rows.map(groupOf))].sort((a,b)=>Number(a.split(':')[0])-Number(b.split(':')[0])||a.localeCompare(b)),[rows]),visible=rows.filter(r=>classroom==='all'||groupOf(r)===classroom),items=selected?(grades[selected.id]?.items??blankItems()):blankItems();
  function changeModelAnswer(index:number,answer:ModelAnswer){setConfig(current=>{const normalized=normalizeGradingConfig(current);return{...normalized,modelAnswers:normalized.modelAnswers.map((item,i)=>i===index?answer:item)}})}
- async function request(url:string,body:object){const r=await fetch(url,{method:url.includes('grading-config')||url.endsWith('/grades')?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();if(!r.ok)throw new Error(d.error);return d}
+ async function request(url:string,body:object){
+  const isAutoGrade=url==='/api/teacher/auto-grade';
+  let r:Response;
+  try{r=await fetch(url,{method:url.includes('grading-config')||url.endsWith('/grades')?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),...(isAutoGrade?{signal:AbortSignal.timeout(70000)}:{})})}
+  catch(e){if(e instanceof Error&&(e.name==='TimeoutError'||e.name==='AbortError'))throw new Error('요청 시간이 초과되었습니다. 다시 시도해 주세요.');throw new Error('서버에 연결하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.')}
+  let d;
+  try{d=await r.json()}catch{throw new Error(r.status===504?'서버 응답 시간이 초과되었습니다. 다시 시도해 주세요.':'서버 응답을 읽을 수 없습니다. 다시 시도해 주세요.')}
+  if(!r.ok)throw new Error(d.error||`요청에 실패했습니다. (${r.status})`);return d;
+ }
  async function saveConfig(){setActionBusy(true);try{await request('/api/teacher/grading-config',{config});setNotice('채점 기준을 저장했습니다.')}catch(e){setError(e instanceof Error?e.message:'저장 실패')}finally{setActionBusy(false)}}
  function changeItem(i:number,p:Partial<GradeItem>){if(!selected)return;setGrades(g=>{const old=g[selected.id],next=(old?.items??blankItems()).map((v,j)=>i===j?{...v,...p}:v);return{...g,[selected.id]:{submission_id:selected.id,classroom:selected.classroom,round:selected.round,items:next,total_score:gradeTotal(next),source:old?.source??'manual',updated_at:old?.updated_at??''}}})}
  function toggleClass(group:string){setCollapsedClasses(current=>{const next=new Set(current);if(next.has(group))next.delete(group);else next.add(group);return next})}
@@ -36,7 +44,30 @@ export default function TeacherWorkspace(){
  function openAiSetup(){const scope=/^\d:[0-9]$/.test(classroom)?visible:rows;setReferenceIds(rows.filter(r=>r.round===EVALUATION_ROUND&&grades[r.id]?.source==='manual').map(r=>r.id));setTargetIds(scope.filter(r=>grades[r.id]?.source!=='manual').map(r=>r.id));setError('');setShowAiSetup(true)}
  function toggleId(id:string,setter:typeof setReferenceIds){setter(current=>current.includes(id)?current.filter(v=>v!==id):[...current,id])}
  function toggleTargetClass(group:string){const ids=rows.filter(r=>groupOf(r)===group&&grades[r.id]?.source!=='manual').map(r=>r.id);setTargetIds(current=>ids.every(id=>current.includes(id))?current.filter(id=>!ids.includes(id)):[...new Set([...current,...ids])])}
- async function autoGrade(){const targets=rows.filter(r=>targetIds.includes(r.id));if(!targets.length){setError('AI 채점을 진행할 학생을 선택해 주세요.');return}const calibrationIds=rows.filter(r=>r.round===EVALUATION_ROUND&&referenceIds.includes(r.id)&&grades[r.id]?.source==='manual').map(r=>r.id);if(calibrationIds.length<2){setError('같은 회차에서 참고할 교사 채점 학생을 2명 이상 선택해 주세요. 다른 반도 참고할 수 있습니다.');return}setActionBusy(true);setError('');let done=0;for(const t of targets){setProgress(`${done+1}/${targets.length} ${t.student_name}`);try{const d=await request('/api/teacher/auto-grade',{submissionId:t.id,calibrationIds});setGrades(g=>({...g,[t.id]:d.grade}));done++}catch(e){setError(`${t.student_name}: ${e instanceof Error?e.message:'실패'}`);break}}setProgress('');setActionBusy(false);if(done){setNotice(`${done}명의 AI 채점 초안을 생성했습니다. 검토 후 교사 채점으로 저장해 주세요.`);setShowAiSetup(false)}}
+ async function autoGrade(){
+  if(actionBusy)return;
+  const targets=rows.filter(r=>targetIds.includes(r.id)&&grades[r.id]?.source!=='manual');
+  if(!targets.length){setError('AI 채점을 진행할 학생을 선택해 주세요.');return}
+  const calibrationIds=rows.filter(r=>r.round===EVALUATION_ROUND&&referenceIds.includes(r.id)&&grades[r.id]?.source==='manual').map(r=>r.id);
+  if(calibrationIds.length<2){setError('같은 회차에서 참고할 교사 채점 학생을 2명 이상 선택해 주세요. 다른 반도 참고할 수 있습니다.');return}
+  setActionBusy(true);setError('');setNotice('');
+  let done=0;
+  const failures:{id:string;message:string}[]=[];
+  try{
+   for(const [index,t] of targets.entries()){
+    setProgress(`${index+1}/${targets.length} ${t.student_name} · 완료 ${done}명 · 실패 ${failures.length}명`);
+    try{
+     const d=await request('/api/teacher/auto-grade',{submissionId:t.id,calibrationIds});
+     if(!d.grade||d.grade.submission_id!==t.id)throw new Error('AI 채점 결과를 확인할 수 없습니다. 다시 채점해 주세요.');
+     setGrades(g=>({...g,[t.id]:d.grade}));done++;
+    }catch(e){failures.push({id:t.id,message:`${t.classroom} ${t.student_name}: ${e instanceof Error?e.message:'채점 실패'}`});setError(`채점 실패 ${failures.length}명. 나머지 학생은 계속 채점합니다.`)}
+   }
+   setTargetIds(failures.map(f=>f.id));
+   setShowAiSetup(failures.length>0);
+   setError(failures.length?`채점 실패 ${failures.length}명 — ${failures.map(f=>f.message).join(' / ')} 실패한 학생만 선택되어 있습니다. 다시 시작하면 해당 학생만 재시도합니다.`:'');
+   setNotice(`${targets.length}명 중 ${done}명 완료 · ${failures.length}명 실패.${done?' 생성된 AI 초안을 검토 후 교사 채점으로 저장해 주세요.':''}`);
+  }finally{setProgress('');setActionBusy(false)}
+ }
  async function publish(){if(!/^\d:[0-9]$/.test(classroom))return;setActionBusy(true);try{const d=await request('/api/teacher/publish',{classroom:classroom.split(':')[1],round:Number(classroom.split(':')[0]),submissionIds:visible.map(r=>r.id)});setNotice(`${groupLabel(classroom)} ${d.count}명의 점수와 코멘트를 공개했습니다.`)}catch(e){setError(e instanceof Error?e.message:'공개 실패')}finally{setActionBusy(false)}}
  return <main className="teacher-workspace"><div className="section-heading"><div><h2>교사 평가실</h2><p>직접 채점 사례를 만든 뒤 AI 초안을 검토하고 학급에 공개하세요.</p></div><button className="button primary" disabled={busy||actionBusy} onClick={openAiSetup}>AI 채점 시작</button><button className="button secondary" onClick={()=>setShowConfig(v=>!v)}>{showConfig?'기준 닫기':'채점 기준 설정'}</button><button className="button secondary" disabled={busy||actionBusy} onClick={()=>setRevision(v=>v+1)}>새로고침</button></div>{error&&<p className="teacher-alert error" role="alert">{error}</p>}{notice&&<p className="teacher-alert">{notice}</p>}
  {showAiSetup&&<section className="ai-grading-setup" aria-label="AI 채점 설정"><div className="ai-setup-heading"><div><h3>AI 채점 시작</h3><p>교사의 최종 허용 원칙을 우선 적용하고, 저장된 기준·모범답안과 선택한 교사 채점 결과를 함께 참고합니다.</p></div><button className="button secondary" onClick={()=>setShowAiSetup(false)}>닫기</button></div><div className="ai-rule-confirm"><b>적용할 채점 기준</b><span>{config.criteria.map(c=>c.title).join(' · ')}</span><button className="button secondary" onClick={()=>setShowConfig(true)}>기준 확인·수정</button></div><details><summary>실제 AI에 전달할 최종 판정 원칙 확인</summary><p className="answer-text">{teacherGradingPolicy}</p></details><h4>1. 채점에 참고할 교사 직접 채점 학생</h4><p className="ai-help">같은 회차에서 총 2명 이상 선택하세요. 1반의 교사 채점 사례를 다른 반에도 적용할 수 있습니다.</p><div className="ai-selection-groups">{classes.map(c=>{const refs=rows.filter(r=>groupOf(r)===c&&grades[r.id]?.source==='manual');return <fieldset key={c}><legend>{groupLabel(c)}</legend>{refs.length?refs.map(r=><label key={r.id}><input type="checkbox" checked={referenceIds.includes(r.id)} onChange={()=>toggleId(r.id,setReferenceIds)}/><span>{r.classroom} {r.student_name} · {grades[r.id].total_score}점</span></label>):<p>교사가 저장한 채점 결과가 없습니다.</p>}</fieldset>})}</div><h4>2. AI 채점을 진행할 학생</h4><p className="ai-help">학생을 개별 선택하거나 학급 전체를 한 번에 선택할 수 있습니다. 교사 직접 채점 결과는 덮어쓰지 않습니다.</p><div className="ai-selection-groups">{classes.map(c=>{const targets=rows.filter(r=>groupOf(r)===c&&grades[r.id]?.source!=='manual');const all=targets.length>0&&targets.every(r=>targetIds.includes(r.id));return <fieldset key={c}><legend>{groupLabel(c)} <button className="text-button" onClick={()=>toggleTargetClass(c)}>{all?'학급 전체 해제':'학급 전체 선택'}</button></legend>{targets.length?targets.map(r=><label key={r.id}><input type="checkbox" checked={targetIds.includes(r.id)} onChange={()=>toggleId(r.id,setTargetIds)}/><span>{r.classroom} {r.student_name}{grades[r.id]?.source==='ai'?' · AI 초안 있음':' · 채점 전'}</span></label>):<p>선택 가능한 학생이 없습니다.</p>}</fieldset>})}</div><div className="ai-setup-actions"><span>참고 {referenceIds.length}명 · AI 채점 대상 {targetIds.length}명</span><button className="button primary" disabled={actionBusy||!targetIds.length} onClick={autoGrade}>{progress||`${targetIds.length}명 AI 채점 시작`}</button></div></section>}

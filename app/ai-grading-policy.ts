@@ -6,6 +6,13 @@ export const aiCommentPolicy = `공개 코멘트 규칙은 참고 사례의 코�
 모든 공개 문장은 '~함' 또는 '~음'으로 끝낸다. '~합니다', '~했습니다', '~하세요', '~됨', '~임'을 쓰지 않는다. 예: '결측 행을 제거하지 않았음.', '대출 횟수 대신 권수의 합계를 구함.', '피봇 수치와 학년별 순위 해석이 일치하지 않음.'
 10점 항목의 comment는 반드시 빈 문자열로 출력한다. 보통의 정답·성실한 수행·모범답안과 동일한 답안에는 칭찬하지 않는다. 모범 수준을 명백히 뛰어넘는 분석이나 통찰이 있는 경우에만 praiseKey에 해당 10점 평가요소 하나를 지정하고 praiseReason에 구체적인 뛰어난 근거를 적는다. 없으면 praiseKey=null, praiseReason=''이다. 학생별 칭찬은 최대 하나다.`;
 
+export class AICommentFormatError extends Error {
+  constructor() {
+    super('AI 코멘트 문장 형식이 올바르지 않습니다. 다시 채점해 주세요.');
+    this.name = 'AICommentFormatError';
+  }
+}
+
 export function normalizeAIComment(value: string): string {
   return value.trim().split(/(?<=[.!?])\s+|\n+/).filter(Boolean).map(sentence => {
     const text = sentence.trim().replace(/[.!?]+$/, '')
@@ -14,8 +21,11 @@ export function normalizeAIComment(value: string): string {
       .replace(/합니다$/, '함').replace(/됩니다$/, '되었음')
       .replace(/있습니다$/, '있음').replace(/없습니다$/, '없음')
       .replace(/않습니다$/, '않음').replace(/입니다$/, '이었음')
-      .replace(/필요됨$/, '필요함').replace(/됨$/, '되었음').replace(/아님$/, '아니었음').replace(/임$/, '이었음');
-    if (!/(함|음)$/.test(text)) throw new Error('AI 코멘트는 ~함 또는 ~음으로 끝나야 합니다.');
+      .replace(/필요됨$/, '필요함').replace(/됨$/, '되었음').replace(/아님$/, '아니었음').replace(/임$/, '이었음')
+      .replace(/했다$/, '했음').replace(/한다$/, '함').replace(/하다$/, '함')
+      .replace(/되었다$/, '되었음').replace(/된다$/, '되었음')
+      .replace(/있다$/, '있음').replace(/없다$/, '없음').replace(/않았다$/, '않았음').replace(/않다$/, '않음');
+    if (!/(함|음)$/.test(text)) throw new AICommentFormatError();
     return `${text}.`;
   }).join(' ');
 }

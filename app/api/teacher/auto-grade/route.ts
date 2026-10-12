@@ -2,7 +2,7 @@
 // @ts-nocheck -- external API payloads are validated before persistence.
 import { hasTeacherSession } from '../../teacher-session';
 import { defaultGradingConfig, gradeTotal, validGradeItems, type GradeItem } from '../../../grading';
-import { checkPivotTable, teacherGradingPolicy, aiCommentPolicy, finalizeAIComments } from '../../../ai-grading-policy';
+import { checkPivotTable, teacherGradingPolicy, aiCommentPolicy, finalizeAIComments, AICommentFormatError } from '../../../ai-grading-policy';
 import { json, loadConfig, sameOrigin, supabase } from '../grading-store';
 export const runtime='nodejs'; export const maxDuration=60;
 const EVALUATION_ROUND=2;
@@ -37,11 +37,17 @@ export async function POST(request:Request){
     }
     const schema={type:'object',additionalProperties:false,properties:{items:{type:'array',minItems:3,maxItems:3,items:{type:'object',additionalProperties:false,properties:{key:{type:'string',enum:defaultGradingConfig.criteria.map(c=>c.key)},title:{type:'string',enum:defaultGradingConfig.criteria.map(c=>c.title)},score:{type:'integer',enum:[4,7,10]},comment:{type:'string',maxLength:180},evidence:{type:'string'},needsReview:{type:'boolean'}},required:['key','title','score','comment','evidence','needsReview']}},praiseKey:{type:['string','null'],enum:[null,...defaultGradingConfig.criteria.map(c=>c.key)]},praiseReason:{type:'string'}},required:['items','praiseKey','praiseReason']};
     const ai=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',store:false,instructions:'당신은 수행평가 채점 보조자다. 학생별 점수와 코멘트는 교사의 최종 검토를 위한 초안이며, 교사의 최종 판정 원칙과 허용 범위를 우선하고 저장된 루브릭과 참고 사례를 함께 적용한다.',input:[{role:'user',content}],text:{format:{type:'json_schema',name:'grading_draft',strict:true,schema}}}),signal:AbortSignal.timeout(55000)});
-    if(!ai.ok){const detail=await ai.text();console.error('OpenAI grading error',ai.status,detail.slice(0,500));return json({error:'AI 채점 요청에 실패했습니다. 모델과 API 키 설정을 확인해 주세요.'},502)}
+    if(!ai.ok){const detail=await ai.text();console.error('OpenAI grading error',ai.status,detail.slice(0,500));if(ai.status===429)return json({error:'AI 요청 한도에 도달했습니다. 잠시 후 다시 채점해 주세요.',code:'AI_RATE_LIMIT'},429);return json({error:ai.status>=500?'AI 서비스에 일시적인 오류가 발생했습니다. 다시 채점해 주세요.':'AI 채점 요청에 실패했습니다. 모델과 API 키 설정을 확인해 주세요.',code:'AI_REQUEST_FAILED'},502)}
     const response=await ai.json() as {output_text?:string;output?:{content?:{type?:string;text?:string}[]}[]};const output=response.output_text??response.output?.flatMap(o=>o.content??[]).find(c=>c.type==='output_text')?.text;if(!output)return json({error:'AI 채점 결과가 비어 있습니다.'},502);const parsed=JSON.parse(output) as {items:GradeItem[];praiseKey:string|null;praiseReason:string};if(!validGradeItems(parsed.items))return json({error:'AI 채점 결과 형식이 올바르지 않습니다.'},502);
     if(!pivotCheck.matches){const item=parsed.items[2];const wasFullScore=item.score===10;if(wasFullScore)item.score=7;const note=`피봇 테이블이 학년별 대출 횟수 분석 목적에 맞지 않음. ${pivotCheck.detail}`;item.comment=wasFullScore?note:item.comment.trim()||note;item.evidence=`${item.evidence??''} 서버 셀 비교: ${pivotCheck.detail}`.trim();}
     parsed.items=finalizeAIComments(parsed.items,parsed.praiseKey,parsed.praiseReason);
     if(!validGradeItems(parsed.items))return json({error:'비교 검증 후 채점 결과 형식이 올바르지 않습니다.'},502);
     const row={submission_id:submission.id,classroom:submission.classroom,round:submission.round,items:parsed.items,total_score:gradeTotal(parsed.items),source:'ai',updated_at:new Date().toISOString()};const save=await fetch(`${db.url}/rest/v1/grading_results?on_conflict=submission_id`,{method:'POST',headers:{...db.headers,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(row)});if(!save.ok)return json({error:'AI 채점 초안을 저장하지 못했습니다.'},502);return json({grade:row});
-  }catch(error){console.error(error);return json({error:'자동 채점 중 오류가 발생했습니다.'},500)}
+  }catch(error){
+    console.error(error);
+    if(error instanceof AICommentFormatError)return json({error:error.message,code:'AI_COMMENT_FORMAT'},502);
+    if(error instanceof Error&&(error.name==='TimeoutError'||error.name==='AbortError'))return json({error:'AI 채점 응답 시간이 초과되었습니다. 다시 채점해 주세요.',code:'AI_TIMEOUT'},504);
+    if(error instanceof SyntaxError)return json({error:'채점 요청 또는 AI 응답을 읽을 수 없습니다. 다시 채점해 주세요.',code:'INVALID_JSON'},502);
+    return json({error:'자동 채점 중 오류가 발생했습니다. 다시 채점해 주세요.',code:'GRADING_FAILED'},500);
+  }
 }
